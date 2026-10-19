@@ -162,9 +162,14 @@ svg.i { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: rou
 .dockin { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); min-height: 76px; }
 #myhand { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .minicards { display: flex; gap: 4px; }
-.mc { width: 38px; height: 54px; border-radius: 6px; background: #f7f3ea; color: #16161a; display: grid; grid-template-rows: auto 1fr; justify-items: center; padding-top: 4px; font: 700 1.05rem/1 var(--font-card); box-shadow: 0 2px 6px oklch(0 0 0 / 0.4); position: relative; }
-.mc .s { font-size: 1.15rem; font-family: "Segoe UI Symbol", "Apple Symbols", sans-serif; }
-.mc.red { color: #c4202f; } .mc.blue { color: #1d5fc4; } .mc.green { color: #13804a; }
+.mc { --w: 66px; width: var(--w); height: calc(var(--w) * 1.4); flex: none; border-radius: calc(var(--w) * 0.13); background: linear-gradient(160deg, #fffdf8, #f1ece1); color: #15151b; position: relative; overflow: hidden; font: 600 calc(var(--w) * 0.58)/1 var(--font-ui); letter-spacing: -0.03em; box-shadow: 0 3px 10px oklch(0 0 0 / 0.45), inset 0 0 0 calc(var(--w) * 0.04) #fffdf8, inset 0 0 0 calc(var(--w) * 0.055) rgba(176, 141, 72, 0.5); }
+.mc .r { position: absolute; left: calc(var(--w) * 0.08); top: calc(var(--w) * 0.07); }
+.mc .r.ten { letter-spacing: -0.09em; transform: scaleX(0.86); transform-origin: left top; }
+.mc .s1 { position: absolute; left: calc(var(--w) * 0.09); top: calc(var(--w) * 0.66); width: calc(var(--w) * 0.3); height: calc(var(--w) * 0.3); }
+.mc .s2 { position: absolute; right: calc(var(--w) * -0.1); bottom: calc(var(--w) * -0.08); width: calc(var(--w) * 0.78); height: calc(var(--w) * 0.78); }
+.cardrow .mc { --w: 32px; }
+.cardrow .mc .s1 { display: none; }
+.mc.red { color: #c1121f; } .mc.blue { color: #1f4fb8; } .mc.green { color: #14713f; }
 .mc.pick { cursor: pointer; outline: 2px dashed var(--brass); outline-offset: 2px; }
 .mc.pick:hover { transform: translateY(-3px); }
 .mc.back { background: repeating-linear-gradient(45deg, oklch(0.35 0.06 160), oklch(0.35 0.06 160) 4px, oklch(0.3 0.05 160) 4px, oklch(0.3 0.05 160) 8px); border: 2px solid #f2ece0; }
@@ -245,8 +250,6 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 .histrow .no { font: 800 1rem/1 var(--font-display); color: var(--brass); }
 .histrow .sum { font-size: 0.86rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cardrow { display: flex; gap: 4px; flex-wrap: wrap; }
-.cardrow .mc { width: 30px; height: 42px; font-size: 0.85rem; padding-top: 3px; }
-.cardrow .mc .s { font-size: 0.9rem; }
 .verdict { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; border: 1px solid; }
 .verdict.ok { border-color: oklch(0.78 0.15 150 / 0.6); background: oklch(0.78 0.15 150 / 0.08); }
 .verdict.bad { border-color: oklch(0.66 0.14 27 / 0.7); background: oklch(0.66 0.14 27 / 0.1); }
@@ -336,11 +339,9 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 .qr { width: min(240px, 70vw); margin: 4px auto 0; background: #fff; border-radius: 14px; padding: 6px; }
 .qr svg { display: block; width: 100%; height: auto; }
 .note.center { text-align: center; }
-.mc { width: 46px; height: 64px; font-size: 1.2rem; border-radius: 8px; }
-.mc .s { font-size: 1.3rem; }
 .vig { position: absolute; inset: 0; pointer-events: none; background: radial-gradient(ellipse at 50% 45%, transparent 55%, oklch(0.08 0.01 50 / 0.55)); }
 @media (max-width: 860px) { .seat { width: 124px; } .plate { grid-template-columns: 30px minmax(0, 1fr); padding: 6px 9px 7px 6px; } .avatar { width: 30px; height: 30px; } .invitebtn span { display: none; } }
-@media (max-width: 520px) { .seat { width: 98px; } .plate { grid-template-columns: minmax(0, 1fr); padding: 6px 6px; } .pstack { font-size: 1rem; } }
+@media (max-width: 520px) { #myhand .mc { --w: 56px; } .seat { width: 98px; } .plate { grid-template-columns: minmax(0, 1fr); padding: 6px 6px; } .pstack { font-size: 1rem; } }
 
 /* full table on a phone */
 #stage.dense .seat { width: 84px; gap: 2px; }
@@ -349,6 +350,12 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 #stage.dense .pstack { font-size: 0.9rem; }
 #stage.dense .tag, #stage.dense .lastact { font-size: 0.62rem; }
 #stage.dense .lastact { padding: 3px 7px; min-height: 18px; }
+
+/* Omaha-style hands: four or five cards in the dock, a little smaller and overlapped so they still fit */
+.minicards { display: flex; gap: 6px; }
+#myhand .minicards.n4 .mc, #myhand .minicards.n5 .mc { --w: 54px; }
+.minicards.n4 .mc + .mc, .minicards.n5 .mc + .mc { margin-left: -10px; }
+@media (max-width: 520px) { #myhand .minicards.n4 .mc, #myhand .minicards.n5 .mc { --w: 46px; } .minicards.n5 .mc + .mc { margin-left: -16px; } }
 
 </style>
 </head>

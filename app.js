@@ -1590,9 +1590,10 @@
           this.phase = 'over'; this.dirty = true; return;
         }
       }
-      const extra = h.phase === 'void' ? 0 : h.uncontested >= 0 ? 0 : 2200 + (h.boards.length - 1) * 1200;
+      // a real table pauses after a hand: time to see who won and with what
+      const extra = h.phase === 'void' ? 0 : h.uncontested >= 0 ? 600 : 3600 + (h.boards.length - 1) * 1500;
       this.phase = 'next';
-      this.nextAt = Date.now() + ms(2600 + extra);
+      this.nextAt = Date.now() + ms(2800 + extra);
       this.dirty = true;
     }
 
@@ -1622,7 +1623,7 @@
       try {
         const secret = PK.fair.randHex(16);
         const commit = await PK.fair.sha256hex(secret);
-        this.shuffle = { no: g.handNo + 1, secret, commit, until: Date.now() + ms(1700) };
+        this.shuffle = { no: g.handNo + 1, secret, commit, until: Date.now() + ms(2600) }; // time to watch the shuffle
         this.phase = 'shuffle';
         if (this.reveal && !this.cfg.autoReveal && Date.now() - (this.revealAt || 0) > 20000) this.reveal = null;
         this.rabbit = null; this.eq = null;
@@ -1793,7 +1794,15 @@
           const t = this.cfg.timer;
           this.dl = t ? now + t * 1000 : 0; this.tbu = false;
           if (seat && seat.disc) this.dl = now + Math.min(t || 15, 10) * 1000;
-          if (seat && seat.bot) this.botAt = now + ms(550 + Math.random() * 900);
+          // dealer's pause when a new street is dealt (chips go in, cards come out), then a human-like think time for bots
+          const newStreet = this.lastStreetKey !== h.no + ':' + h.street;
+          this.lastStreetKey = h.no + ':' + h.street;
+          const streetPause = newStreet && h.street > 0 ? 1300 : 0;
+          if (streetPause && this.dl) this.dl += streetPause;
+          if (seat && seat.bot) {
+            const L = g.legal(s), facing = L && !L.check, big = facing && L.call > (L.pot || 0) * 0.4;
+            this.botAt = now + ms(streetPause + 1200 + Math.random() * 1600 + (facing ? 700 : 0) + (big ? 1200 + Math.random() * 1500 : 0));
+          }
           this.dirty = true;
         }
         if (!seat) return;
@@ -2308,7 +2317,8 @@
    (presence / peers / onPeers / join), built from heartbeats. */
 (function (PK) {
   'use strict';
-  const RELAYS = ['wss://nos.lol', 'wss://relay.primal.net', 'wss://nostr.mom'];
+  // several independent relays: any one of them reaching both players is enough
+  const RELAYS = ['wss://nos.lol', 'wss://relay.primal.net', 'wss://nostr.mom', 'wss://relay.damus.io', 'wss://offchain.pub', 'wss://nostr-pub.wellorder.net'];
   const MQTT_URL = 'wss://public.cloud.shiftr.io';
   const KIND = 21337; // ephemeral: relays forward it but never store it
   const ALPH = '23456789abcdefghjkmnpqrstuvwxyz';
@@ -2347,7 +2357,28 @@
       this.sk = window.NostrTools ? window.NostrTools.generateSecretKey() : null;
       if (this.sk) for (const url of RELAYS) this.openNostr(url, 0);
       if (window.mqtt) this.openMqtt();
+      // phones pause pages in the background and drop their connections: reconnect at once when the page is back
+      if (typeof document !== 'undefined' && typeof window !== 'undefined' && window.addEventListener) {
+        const wake = () => { if (!document.hidden) this.wake(); };
+        document.addEventListener('visibilitychange', wake);
+        window.addEventListener('pageshow', wake);
+        window.addEventListener('online', wake);
+        window.addEventListener('focus', wake);
+      }
     }
+    wake() {
+      if (this.closed) return;
+      const now = Date.now();
+      if (now - (this.lastWake || 0) < 1500) return;
+      this.lastWake = now;
+      for (const url of RELAYS) {
+        const s = this.sockets.find((x) => x.url === url);
+        if (!s || s.ws.readyState > 1) { if (s) s.dead = true; this.openNostr(url, 0); }
+      }
+      if (this.mq && !this.mq.connected) { try { this.mq.reconnect(); } catch (e) {} }
+      for (const h of this.wakeHandlers || []) { try { h(); } catch (e) {} }
+    }
+    onWake(h) { (this.wakeHandlers = this.wakeHandlers || []).push(h); }
     setOpen(id, on) {
       const before = this.open.size > 0;
       if (on) this.open.add(id); else this.open.delete(id);
@@ -2373,10 +2404,11 @@
         else if (d[0] === 'OK' && d[2] === false && /rate/i.test(d[3] || '')) s.limited = Date.now() + 5000;
       };
       ws.onclose = () => {
+        if (s.dead) return; // replaced by a fresh socket already
         this.setOpen(url, false);
         if (this.closed) return;
         const wait = Math.min(15000, 1000 * Math.pow(2, attempt));
-        setTimeout(() => this.openNostr(url, attempt + 1), wait);
+        setTimeout(() => { if (!s.dead) { s.dead = true; this.openNostr(url, attempt + 1); } }, wait);
       };
       ws.onerror = () => { try { ws.close(); } catch (e) {} };
     }
@@ -2449,6 +2481,7 @@
       bus.onMessage((m) => this.handle(m));
       setInterval(() => this.beat(), HEARTBEAT);
       setInterval(() => this.sweep(), 2000);
+      bus.onWake(() => { this.hello(); this.sendNow(); });
       if (typeof addEventListener === 'function') addEventListener('pagehide', () => { this.bus.send({ v: 1, p: this.bus.peer, s: this.nextSeq(), r: this.name, k: 'x' }); });
       this.hello();
     }
@@ -2590,10 +2623,11 @@
   };
   PK.FELTS = FELTS;
   const SUIT_GLYPH = { s: '♠', h: '♥', d: '♦', c: '♣' };
-  const SUIT_COLOR2 = { s: '#16161a', c: '#16161a', h: '#c4202f', d: '#c4202f' };
-  const SUIT_COLOR4 = { s: '#16161a', c: '#13804a', h: '#c4202f', d: '#1d5fc4' };
+  const SUIT_COLOR2 = { s: '#15151b', c: '#15151b', h: '#c1121f', d: '#c1121f' };
+  const SUIT_COLOR4 = { s: '#15151b', c: '#14713f', h: '#c1121f', d: '#1f4fb8' };
   PK.SUIT_GLYPH = SUIT_GLYPH;
   const CW = 0.42, CH = 0.6;
+  const TILT = 0.42; // how far face-up cards lean back toward the viewer (radians)
   const ease = { out: (t) => 1 - Math.pow(1 - t, 3), inOut: (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2), back: (t) => { const c = 1.4; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); } };
 
   class Scene3D {
@@ -2619,6 +2653,7 @@
       this.texCache = new Map();
       this.layoutCbs = [];
       this.n = 9; this.me = -1; this.portrait = false;
+      if (typeof document !== 'undefined' && document.fonts && document.fonts.load) document.fonts.load('700 100px "Instrument Sans"').then(() => { this.fontsReady = true; this.refreshFaces(); }).catch(() => {});
       this.needs = true; this.lastHn = -1; this.lastHp = '';
       this.camT = 0; this.drag = null; this.orbit = { yaw: 0, pitch: 0, zoom: 1 };
       this.buildLights();
@@ -2813,64 +2848,45 @@
       x.fill(); x.restore();
     }
 
+    // Big-index faces: a huge rank and suit in the corner plus one large suit, so a card reads at a glance
+    // even small, far away or at an angle (the style online poker rooms use).
     faceTex(card) {
       const THREE = T3();
-      const key = 'face' + card + (this.opts.fourColor ? 4 : 2) + (this.opts.bigCards ? 'b' : '');
+      const key = 'face' + card + (this.opts.fourColor ? 4 : 2) + (this.opts.bigCards ? 'b' : '') + (this.fontsReady ? 'f' : '');
       if (this.texCache.has(key)) return this.texCache.get(key);
       const W = 512, H = 732;
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const x = c.getContext('2d');
-      x.fillStyle = '#fbf8f1'; x.fillRect(0, 0, W, H);
-      const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, 'rgba(255,255,255,0.5)'); g.addColorStop(1, 'rgba(120,100,70,0.08)');
+      // ivory card stock with a fine gold inner line
+      const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#fffdf8'); g.addColorStop(1, '#f1ece1');
       x.fillStyle = g; x.fillRect(0, 0, W, H);
+      x.strokeStyle = 'rgba(176,141,72,0.55)'; x.lineWidth = 4; x.strokeRect(20, 20, W - 40, H - 40);
       const r = card[0], suit = card[1];
       const rank = r === 'T' ? '10' : r;
       const col = (this.opts.fourColor ? SUIT_COLOR4 : SUIT_COLOR2)[suit];
-      x.fillStyle = col; x.textAlign = 'center'; x.textBaseline = 'alphabetic';
       const big = this.opts.bigCards;
-      const corner = (flip) => {
-        x.save(); if (flip) { x.translate(W, H); x.rotate(Math.PI); }
-        x.fillStyle = col;
-        x.font = `700 ${big ? 150 : 110}px "Bodoni Moda", Didot, Georgia, serif`;
-        if (rank === '10') { x.save(); x.translate(big ? 92 : 64, 0); x.scale(0.8, 1); x.fillText(rank, 0, big ? 150 : 112); x.restore(); }
-        else x.fillText(rank, big ? 92 : 64, big ? 150 : 112);
-        this.suitPath(x, suit, big ? 92 : 64, big ? 230 : 168, big ? 100 : 62, false);
-        x.restore();
-      };
-      corner(false);
-      if (!big) corner(true);
-      // centre
-      const L = 0.27, R = 0.73, T = 0.17, B = 0.83;
-      const P = {
-        2: [[.5, T], [.5, B]], 3: [[.5, T], [.5, .5], [.5, B]], 4: [[L, T], [R, T], [L, B], [R, B]],
-        5: [[L, T], [R, T], [.5, .5], [L, B], [R, B]], 6: [[L, T], [R, T], [L, .5], [R, .5], [L, B], [R, B]],
-        7: [[L, T], [R, T], [.5, .335], [L, .5], [R, .5], [L, B], [R, B]], 8: [[L, T], [R, T], [.5, .335], [L, .5], [R, .5], [.5, .665], [L, B], [R, B]],
-        9: [[L, T], [R, T], [L, .39], [R, .39], [.5, .5], [L, .61], [R, .61], [L, B], [R, B]],
-        10: [[L, T], [R, T], [.5, .28], [L, .39], [R, .39], [L, .61], [R, .61], [.5, .72], [L, B], [R, B]],
-      };
-      if (big) {
-        this.suitPath(x, suit, W * 0.6, H * 0.68, 210, false);
-      } else if (r === 'A') {
-        this.suitPath(x, suit, W / 2, H / 2, suit === 's' ? 230 : 170, false);
-      } else if ('JQK'.includes(r)) {
-        const fx = 92, fy = 120, fw = W - 184, fh = H - 240;
-        const gg = x.createLinearGradient(0, fy, 0, fy + fh);
-        gg.addColorStop(0, suit === 'h' || suit === 'd' ? '#fbe7d9' : '#e9edf5'); gg.addColorStop(1, '#f6ead2');
-        x.fillStyle = gg; x.fillRect(fx, fy, fw, fh);
-        x.strokeStyle = '#b8913e'; x.lineWidth = 6; x.strokeRect(fx, fy, fw, fh);
-        x.strokeStyle = col; x.lineWidth = 2; x.strokeRect(fx + 10, fy + 10, fw - 20, fh - 20);
-        x.fillStyle = col;
-        x.font = `700 250px "Bodoni Moda", Didot, Georgia, serif`;
-        x.fillText(r, W / 2, H / 2 + 60);
-        this.suitPath(x, suit, W / 2, fy + 70, 56, false);
-        this.suitPath(x, suit, W / 2, fy + fh - 70, 56, true);
-      } else {
-        const n = +(r === 'T' ? 10 : r);
-        for (const [px, py] of P[n]) this.suitPath(x, suit, W * px, H * py, n >= 9 ? 74 : 84, py > 0.5);
-      }
+      const fs = big ? 350 : 310;
+      // one large suit, partly off the corner (clean modern look, still recognisable from across the table)
+      x.save(); x.beginPath(); x.rect(20, 20, W - 40, H - 40); x.clip();
+      x.fillStyle = col; x.globalAlpha = 0.96; this.suitPath(x, suit, W * 0.69, H * 0.75, big ? 380 : 350, false);
+      x.restore();
+      // big rank, squeezed to fit when wide (10, Q, K...)
+      x.fillStyle = col; x.textAlign = 'left'; x.textBaseline = 'alphabetic';
+      x.font = `600 ${fs}px "Instrument Sans", "Helvetica Neue", Arial, "Roboto", system-ui, sans-serif`;
+      const maxW = W * 0.6, mw = x.measureText(rank).width;
+      const sx = Math.min(1, maxW / mw) * (rank === '10' ? 0.9 : 1);
+      x.save(); x.translate(44, fs * 0.82 + 34); x.scale(sx, 1); x.fillText(rank, 0, 0); x.restore();
+      // small suit under the rank
+      this.suitPath(x, suit, 44 + 66, fs * 0.82 + 128, big ? 132 : 118, false);
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
       this.texCache.set(key, t);
       return t;
+    }
+    // redraw faces once the card font has loaded (the first textures may have used a fallback font)
+    refreshFaces() {
+      this.texCache.forEach((t, key) => { if (key.startsWith('face')) { t.dispose(); this.texCache.delete(key); } });
+      for (const c of this.cards.values()) { const f = c.face; c.face = null; if (f) this.setFace(c, f); }
+      this.needs = true;
     }
 
     backTex() {
@@ -2903,7 +2919,7 @@
       const THREE = T3();
       const grp = new THREE.Group();
       const geo = this.cardGeometry();
-      const front = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({ map: null, color: '#f7f3ea', roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.25, envMapIntensity: 0.6 }));
+      const front = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ map: null, color: '#f7f3ea', roughness: 0.62, metalness: 0, envMapIntensity: 0.32 }));
       const back = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({ map: this.backTex(), roughness: 0.45, clearcoat: 0.35, clearcoatRoughness: 0.25, envMapIntensity: 0.6 }));
       back.rotation.y = Math.PI; back.position.z = -0.002;
       front.castShadow = back.castShadow = true;
@@ -2932,7 +2948,7 @@
       this.scene.add(this.deckGroup);
       this.placeDeck();
     }
-    deckPos() { const { rz, rx } = this.radii(); return this.portrait ? new (T3().Vector3)(-rx * 0.55, 0, -rz * 0.72) : new (T3().Vector3)(0, 0, -rz * 0.72); }
+    deckPos() { const { rz, rx } = this.radii(), nb = this.vm && this.vm.boards ? this.vm.boards.length : 1; return this.portrait ? new (T3().Vector3)(-rx * 0.55, 0, -rz * 0.72) : new (T3().Vector3)(nb > 1 ? -0.7 : 0, 0, -rz * 0.86); }
     placeDeck() { const p = this.deckPos(); this.deckGroup.position.copy(p); this.deckGroup.rotation.y = 0; }
 
     buildButton() {
@@ -3094,7 +3110,7 @@
       const THREE = T3();
       const p = this.onEllipse(i, 0.8), a = this.seatAngle(i);
       const t = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
-      return p.add(t.multiplyScalar(0.62));
+      return p.add(t.multiplyScalar(i === this.me ? 1.05 : 0.62));
     }
     betSpot(i) { return this.onEllipse(i, 0.52); }
     btnSpot(i) {
@@ -3105,11 +3121,14 @@
     }
     // phones: board sits a little higher (between the side seats) and the pot goes under it, in the open middle
     boardZ() { return this.portrait ? -0.5 : 0; }
-    potSpot() { const { rz } = this.radii(); return this.portrait ? new (T3().Vector3)(0, 0, 0.62) : new (T3().Vector3)(0, 0, -rz * 0.42); }
+    potSpot() {
+      const { rz } = this.radii(), nb = this.vm && this.vm.boards ? this.vm.boards.length : 1;
+      return this.portrait ? new (T3().Vector3)(0, 0, 0.62) : new (T3().Vector3)(nb > 1 ? 0.3 : 0, 0, -rz * (nb > 1 ? 0.72 : 0.58));
+    }
     boardSpot(bi, k, nb) {
       const THREE = T3();
-      const sp = this.portrait ? 0.74 : 0.62, scale = nb > 1 ? 0.84 : 1; // phones: bigger, wider board
-      const z = (nb > 1 ? (bi === 0 ? -0.4 : 0.36) : 0.02) + this.boardZ();
+      const sp = this.portrait ? 0.74 : 0.8, scale = nb > 1 ? 0.84 : 1; // big, easy-to-read board
+      const z = (nb > 1 ? (bi === 0 ? -0.5 : 0.42) : 0.02) + this.boardZ();
       return new THREE.Vector3((k - 2) * sp * scale, 0.004 + k * 0.0005, z);
     }
 
@@ -3238,7 +3257,7 @@
       if (key === this.layoutKey) return;
       this.layoutKey = key;
       const nb = this.vm && this.vm.boards ? this.vm.boards.length : 1;
-      const L = { seats: [], bets: [], pot: this.project(this.potSpot().add(new (T3().Vector3)(0, 0.1, 0.3))), board: this.project(new (T3().Vector3)(0, 0, (nb > 1 ? 0.88 : 0.52) + this.boardZ())), boardTop: this.project(new (T3().Vector3)(0, 0, -0.62 + this.boardZ())), cards: [] };
+      const L = { seats: [], bets: [], pot: this.project(this.potSpot().add(new (T3().Vector3)(0, 0.1, this.portrait ? 0.3 : 0.24))), board: this.project(new (T3().Vector3)(0, 0, (nb > 1 ? 0.88 : 0.52) + this.boardZ())), boardTop: this.project(new (T3().Vector3)(0, 0, -0.62 + this.boardZ())), cards: [] };
       for (let i = 0; i < this.n; i++) {
         L.seats.push(this.project(this.seatAnchor(i)));
         L.bets.push(this.project(this.betSpot(i).add(new (T3().Vector3)(0, 0.05, 0))));
@@ -3279,8 +3298,11 @@
       const pos = new THREE.Vector3(), rot = new THREE.Euler(), sc = 1;
       if (c.kind === 'board') {
         pos.copy(this.boardSpot(c.bi, c.k, c.nb));
-        rot.set(c.up ? -Math.PI / 2 : Math.PI / 2, 0, 0);
-        return { pos, rot, sc: this.portrait ? (c.nb > 1 ? 1.3 : 1.6) : (c.nb > 1 ? 1.08 : 1.36) };
+        const bsc = this.portrait ? (c.nb > 1 ? 1.3 : 1.6) : (c.nb > 1 ? 1.32 : 1.72);
+        // face-up community cards lean back toward you (like a card holder) so they are not squashed by the camera angle
+        if (c.up) { rot.set(-Math.PI / 2 + TILT, 0, 0); pos.y += (CH * bsc / 2) * Math.sin(TILT) + 0.01; }
+        else rot.set(Math.PI / 2, 0, 0);
+        return { pos, rot, sc: bsc };
       }
       if (c.kind === 'hole') {
         if (c.seat === this.me && c.mine) {
@@ -3295,14 +3317,21 @@
         const base = this.cardSpot(c.seat);
         const a = this.seatAngle(c.seat);
         const t = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
-        const spread = c.up ? (c.n > 3 ? 0.24 : 0.3) : 0.14;
-        pos.copy(base.add(t.multiplyScalar((c.k - (c.n - 1) / 2) * spread)));
+        if (c.up) {
+          // shown cards: side by side, upright as you look at the table, leaning back so you can read them
+          const ssc = c.n > 3 ? 0.9 : 1.05, gap = CW * ssc + 0.03;
+          pos.copy(this.onEllipse(c.seat, 0.82)); pos.x += (c.k - (c.n - 1) / 2) * gap;
+          pos.y = (CH * ssc / 2) * Math.sin(TILT) + 0.02 + c.k * 0.002;
+          rot.order = 'YXZ'; rot.y = 0; rot.x = -Math.PI / 2 + TILT; rot.z = 0;
+          return { pos, rot, sc: ssc };
+        }
+        pos.copy(base.add(t.multiplyScalar((c.k - (c.n - 1) / 2) * 0.14)));
         pos.y = 0.006 + c.k * 0.003;
         rot.order = 'YXZ';
         rot.y = this.facing(c.seat) + Math.PI;
-        rot.x = c.up ? -Math.PI / 2 : Math.PI / 2;
-        rot.z = c.up ? 0 : (c.k - (c.n - 1) / 2) * 0.12;
-        return { pos, rot, sc: c.up ? 0.92 : 0.78 };
+        rot.x = Math.PI / 2;
+        rot.z = (c.k - (c.n - 1) / 2) * 0.12;
+        return { pos, rot, sc: 0.78 };
       }
       return { pos, rot, sc };
     }
@@ -3423,8 +3452,8 @@
             c.up = up; c.n = n; c.folded = S.folded;
             if (freshDeal && !this.opts.reduced) {
               const oi = Math.max(0, order.indexOf(s));
-              const delay = (k * Math.max(order.length, 1) + oi) * 70 + 120;
-              this.moveCard(c, delay, 300, 0.25);
+              const delay = (k * Math.max(order.length, 1) + oi) * 120 + 200;
+              this.moveCard(c, delay, 420, 0.25);
               PK.sfx && PK.sfx.deal(delay);
               dealing = Math.max(dealing, delay);
             } else this.moveCard(c, 0, 0);
@@ -3445,7 +3474,8 @@
       // board
       const boards = vm.boards || [];
       const nb = boards.length;
-      let bd = freshDeal ? dealing + 450 : 0;
+      // new street: let the bets slide into the pot first, then deal the cards (like a dealer would)
+      let bd = freshDeal ? dealing + 600 : (this.opts.reduced ? 0 : 900);
       for (let bi = 0; bi < 4; bi++) for (let k = 0; k < 5; k++) {
         const key = 'b' + vm.hn + ':' + bi + ':' + k;
         let c = this.cards.get(key);
@@ -3460,10 +3490,10 @@
           const dp = this.deckPos().add(new THREE.Vector3(0, 0.16, 0));
           c.grp.position.copy(dp); c.grp.rotation.set(Math.PI / 2, 0, 0);
           if (this.opts.reduced || (!newHand && false)) { c.up = true; this.moveCard(c, 0, 0); continue; }
-          const d0 = bd; bd += k < 3 && boards[bi].length >= 3 && !this.boardSeen(bi, vm.hn) ? 90 : 160;
+          const d0 = bd; bd += k < 3 && boards[bi].length >= 3 && !this.boardSeen(bi, vm.hn) ? 160 : 220;
           // land face down, then flip
           c.up = false;
-          this.moveCard(c, d0, 300, 0.2, () => { c.up = true; this.moveCard(c, 40, 280, 0.18); });
+          this.moveCard(c, d0, 400, 0.2, () => { c.up = true; this.moveCard(c, 80, 360, 0.18); });
           PK.sfx && PK.sfx.deal(d0);
         } else if (c.nb !== nb || !c.placed) { c.nb = nb; c.placed = true; c.up = true; this.moveCard(c, 0, 250, 0.05); }
       }
@@ -3571,7 +3601,7 @@
 
     setOption(k, v) {
       this.opts[k] = v;
-      if (k === 'fourColor' || k === 'bigCards') { this.texCache.forEach((t, key) => { if (key.startsWith('face')) this.texCache.delete(key); }); for (const c of this.cards.values()) { const f = c.face; c.face = null; if (f) this.setFace(c, f); } }
+      if (k === 'fourColor' || k === 'bigCards') this.refreshFaces();
       if (k === 'quality') { this.renderer.shadowMap.enabled = v !== 'low'; this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, v === 'low' ? 1 : 2)); this.scene.traverse((o) => { if (o.material) { const m = Array.isArray(o.material) ? o.material : [o.material]; m.forEach((x) => { x.needsUpdate = true; }); } }); }
       this.needs = true;
     }
@@ -3630,9 +3660,10 @@
   PK.icon = icon; PK.h = h;
 
   // ---------------- per-viewer settings ----------------
-  const DEF_SET = { felt: 'green', back: 'brass', fourColor: false, bigCards: false, view: 'player', quality: 'high', motion: 'auto', contrast: false, scale: 1, volume: 0.7, muted: false, showBB: false, betDefault: 'min', haptics: true, autoRebuy: false, confirmAllin: true, autoMuck: false };
+  const DEF_SET = { felt: 'green', back: 'brass', fourColor: true, bigCards: false, view: 'player', quality: 'high', motion: 'auto', contrast: false, scale: 1, volume: 0.7, muted: false, showBB: false, betDefault: 'min', haptics: true, autoRebuy: false, confirmAllin: true, autoMuck: false };
   let SET = Object.assign({}, DEF_SET);
   try { SET = Object.assign(SET, JSON.parse(localStorage.getItem('br.settings') || '{}')); } catch (e) {}
+  if (!SET.cv) { SET.fourColor = true; SET.cv = 2; } // new readable cards: four-colour suits on by default (can be turned off in Settings)
   const saveSet = () => { try { localStorage.setItem('br.settings', JSON.stringify(SET)); } catch (e) {} };
   const reducedMotion = () => SET.motion === 'on' || (SET.motion === 'auto' && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   PK.SET = SET;
@@ -3664,12 +3695,30 @@
 
   const cardName = (c) => (c ? PK.RNAME[PK.RANKS.indexOf(c[0]) + 2] + ' of ' + { s: 'spades', h: 'hearts', d: 'diamonds', c: 'clubs' }[c[1]] : '');
   const splitCards = (s) => (s ? s.match(/.{2}/g) || [] : []);
+  // Suits drawn as SVG (same shapes as the 3D cards), so they look identical on every phone and never turn into emoji.
+  const SUIT_D = {
+    h: 'M0 38C-60 -6 -48 -58 0 -28C48 -58 60 -6 0 38Z',
+    d: 'M0 -50Q18 -18 38 0Q18 18 0 50Q-18 18 -38 0Q-18 -18 0 -50Z',
+    s: 'M0 -48C-58 -2 -52 40 -8 22Q-10 40 -22 50L22 50Q10 40 8 22C52 40 58 -2 0 -48Z',
+    c: 'M-20 -24a20 20 0 1 0 40 0a20 20 0 1 0 -40 0ZM-42 6a20 20 0 1 0 40 0a20 20 0 1 0 -40 0ZM2 6a20 20 0 1 0 40 0a20 20 0 1 0 -40 0ZM-6 6Q-8 38 -20 50L20 50Q8 38 6 6Z',
+  };
+  function suitSvg(s, cls) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const el = document.createElementNS(NS, 'svg');
+    el.setAttribute('viewBox', '-52 -52 104 104'); el.setAttribute('class', cls); el.setAttribute('aria-hidden', 'true');
+    const p = document.createElementNS(NS, 'path'); p.setAttribute('d', SUIT_D[s]); p.setAttribute('fill', 'currentColor');
+    el.append(p);
+    return el;
+  }
+  PK.suitSvg = suitSvg;
+  // Big-index card: huge rank top-left, suit under it, large suit bottom-right.
   function miniCard(c, cls) {
     if (!c) return h('div', { class: 'mc back' + (cls ? ' ' + cls : ''), 'aria-label': 'Hidden card' });
     const red = 'hd'.includes(c[1]);
     let col = red ? 'red' : '';
     if (SET.fourColor) col = { h: 'red', d: 'blue', c: 'green', s: '' }[c[1]];
-    return h('div', { class: 'mc ' + col + (cls ? ' ' + cls : ''), role: 'img', 'aria-label': cardName(c) }, c[0] === 'T' ? '10' : c[0], h('span', { class: 's' }, PK.SUIT_GLYPH[c[1]]));
+    return h('div', { class: 'mc ' + col + (cls ? ' ' + cls : ''), role: 'img', 'aria-label': cardName(c) },
+      h('span', { class: 'r' + (c[0] === 'T' ? ' ten' : '') }, c[0] === 'T' ? '10' : c[0]), suitSvg(c[1], 's1'), suitSvg(c[1], 's2'));
   }
   PK.miniCard = miniCard; PK.cardName = cardName; PK.splitCards = splitCards;
 
@@ -4157,7 +4206,8 @@
   function renderCenter() {
     const box = $('#center');
     const T = ui.T, me = mySeat();
-    const key = [!!T, ui.mode, ui.connecting, me, T && T.ph, ui.joinDismissed, Math.floor((Date.now() - (ui.enteredAt || 0)) / 6000) > 0, ui.bus && ui.bus.connected()].join('|');
+    const wt = Date.now() - (ui.enteredAt || 0);
+    const key = [!!T, ui.mode, ui.connecting, me, T && T.ph, ui.joinDismissed, wt > 5000, wt > 12000, wt > 25000, ui.bus && ui.bus.connected()].join('|');
     if (key === ui.centerKey && box.children.length) return;
     ui.centerKey = key;
     box.textContent = '';
@@ -4178,14 +4228,14 @@
     if (ui.mode === 'online' && !T) {
       const waited = Date.now() - (ui.enteredAt || Date.now());
       const conn = ui.bus && ui.bus.connected();
-      if (!conn && waited > 8000) {
-        box.append(h('div', { class: 'card stack' }, h('h1', null, 'Can’t connect'), h('p', null, 'This network seems to block the game’s connection. Try mobile data or a different Wi-Fi, then reload.'), h('button', { class: 'btn primary', onclick: () => location.reload() }, 'Try again')));
-      } else if (waited < 6000 || ui.connecting) {
-        box.append(h('div', { class: 'card stack center' }, h('h1', null, 'Joining table'), h('p', { class: 'note' }, 'Finding the other players…')));
+      if (!conn && waited > 12000) {
+        box.append(h('div', { class: 'card stack' }, h('h1', null, 'Can’t connect'), h('p', null, 'This Wi-Fi seems to block the game. Switch to mobile data (or another Wi-Fi) and tap Try again.'), h('button', { class: 'btn primary big', onclick: () => location.reload() }, 'Try again')));
+      } else if (waited < 25000 || ui.connecting) {
+        box.append(h('div', { class: 'card stack center' }, h('h1', null, 'Joining table'), h('p', null, waited < 5000 ? 'Finding the other players…' : 'Waiting for the table. Ask the friend who sent you the link to keep the game open on their screen (phones pause it when you switch apps).')));
       } else {
-        box.append(h('div', { class: 'card stack' }, h('h1', null, 'Nobody’s here yet'), h('p', null, 'No game is running at this link. Start one and send the link to your friends.'),
-          h('button', { class: 'btn primary big', onclick: () => { const err = client.createTable({}, { sit: true, seat: 0 }); if (err) toast(err); else setTimeout(() => PK.panels.open('invite'), 400); } }, 'Start the game here'),
-          h('button', { class: 'btn ghost', onclick: () => { location.hash = ''; location.reload(); } }, 'Back')));
+        box.append(h('div', { class: 'card stack' }, h('h1', null, 'Table not found yet'), h('p', null, 'Nobody at this link is answering. Ask your friend to open the game on their screen. This page keeps looking and joins as soon as they are back.'),
+          h('button', { class: 'btn primary big', onclick: () => { location.hash = ''; location.reload(); } }, 'Make my own table instead'),
+          h('button', { class: 'btn ghost', onclick: () => { const err = client.createTable({}, { sit: true, seat: 0 }); if (err) toast(err); else setTimeout(() => PK.panels.open('invite'), 400); } }, 'I made this table: restart it here')));
       }
       return;
     }
@@ -4374,7 +4424,7 @@
     const cards = client.myCards && client.myCardsHand === T.hn ? client.myCards : null;
     if (cards && cards.length && (f & F.IN) && T.hp !== 'shuffle') {
       const discarding = T.hp === 'discard' && (T.dc || []).includes(me);
-      left.append(h('div', { class: 'minicards' }, cards.map((c, idx) => {
+      left.append(h('div', { class: 'minicards n' + cards.length }, cards.map((c, idx) => {
         const el = miniCard(c, discarding ? 'pick' : '');
         if (discarding) { el.setAttribute('role', 'button'); el.setAttribute('tabindex', '0'); el.setAttribute('aria-label', 'Discard ' + cardName(c)); el.onclick = () => client.req('discard', idx); el.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') client.req('discard', idx); }; }
         return el;
