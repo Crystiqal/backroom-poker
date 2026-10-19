@@ -2882,6 +2882,24 @@
       this.texCache.set(key, t);
       return t;
     }
+    // Showdown: the five cards that won get a gold edge; the other face-up cards dim.
+    applyHighlight(vm) {
+      const THREE = T3();
+      const win = vm.win && vm.win.length ? new Set(vm.win) : null;
+      for (const c of this.cards.values()) {
+        const state = !win || !c.face || !c.up ? 0 : win.has(c.face) ? 1 : -1;
+        if (c.hl === state) continue;
+        c.hl = state;
+        c.front.material.color.setScalar(state === -1 ? 0.5 : 1);
+        if (state === 1 && !c.glow) {
+          const g = new THREE.Mesh(new THREE.PlaneGeometry(CW + 0.07, CH + 0.07), new THREE.MeshBasicMaterial({ color: '#f3cd6a', transparent: true, opacity: 0.95, toneMapped: false }));
+          g.position.z = -0.001;
+          c.grp.add(g); c.glow = g;
+        }
+        if (c.glow) c.glow.visible = state === 1;
+      }
+      this.needs = true;
+    }
     // redraw faces once the card font has loaded (the first textures may have used a fallback font)
     refreshFaces() {
       this.texCache.forEach((t, key) => { if (key.startsWith('face')) { t.dispose(); this.texCache.delete(key); } });
@@ -3321,6 +3339,7 @@
           // shown cards: side by side, upright as you look at the table, leaning back so you can read them
           const ssc = c.n > 3 ? 0.9 : 1.05, gap = CW * ssc + 0.03;
           pos.copy(this.onEllipse(c.seat, 0.82)); pos.x += (c.k - (c.n - 1) / 2) * gap;
+          if (!this.portrait && pos.z < -1.2) pos.z += 0.32; // top seats: keep shown cards clear of the name plate
           pos.y = (CH * ssc / 2) * Math.sin(TILT) + 0.02 + c.k * 0.002;
           rot.order = 'YXZ'; rot.y = 0; rot.x = -Math.PI / 2 + TILT; rot.z = 0;
           return { pos, rot, sc: ssc };
@@ -3498,6 +3517,7 @@
         } else if (c.nb !== nb || !c.placed) { c.nb = nb; c.placed = true; c.up = true; this.moveCard(c, 0, 250, 0.05); }
       }
       this.boardSeenMark(vm.hn, boards);
+      this.applyHighlight(vm);
 
       // chips
       this.updateChips(vm);
@@ -3767,7 +3787,9 @@
     });
     const winners = [];
     (T.res || []).forEach((r) => r[3].forEach((w) => { if (!winners.includes(w)) winners.push(w); }));
-    return { n: T.c.s, me, mine: !!(client.myCards && client.myCardsHand === T.hn), hn: T.hn, hp: T.hp || T.ph, boards: T.hp === 'shuffle' ? [] : T.bd || [], pot: T.pot || 0, btn: T.btn, toAct: T.hp === 'bet' ? T.ta : -1, od: T.od, seats, winners };
+    // the cards that made the winning hands, so the table can light them up
+    const win = T.hp === 'done' && !(T.unc >= 0) ? [...new Set((T.res || []).flatMap((r) => splitCards(r[6] || '')))] : null;
+    return { n: T.c.s, me, mine: !!(client.myCards && client.myCardsHand === T.hn), hn: T.hn, hp: T.hp || T.ph, boards: T.hp === 'shuffle' ? [] : T.bd || [], pot: T.pot || 0, btn: T.btn, toAct: T.hp === 'bet' ? T.ta : -1, od: T.od, seats, winners, win };
   }
 
   // ---------------- boot ----------------
@@ -3777,7 +3799,7 @@
     applyLook();
     buildChrome();
     // fonts first so card faces draw with the right typefaces
-    try { await Promise.race([Promise.all([document.fonts.load('700 92px "Bodoni Moda"'), document.fonts.load('800 40px "Big Shoulders Display"')]), new Promise((r) => setTimeout(r, 1800))]); } catch (e) {}
+    try { await Promise.race([Promise.all([document.fonts.load('600 92px "Instrument Sans"'), document.fonts.load('800 40px "Big Shoulders Display"')]), new Promise((r) => setTimeout(r, 1800))]); } catch (e) {}
     try {
       if (!window.THREE) throw new Error('3D library did not load');
       ui.scene = new PK.Scene3D($('#gl'), { reduced: reducedMotion(), quality: SET.quality, fourColor: SET.fourColor, bigCards: SET.bigCards, felt: SET.felt, back: SET.back, view: SET.view });
@@ -3822,7 +3844,7 @@
     ui.connecting = false;
     if (opts.create) {
       const err = client.createTable(opts.cfg || {}, { sit: true, seat: 0, bots: opts.bots || 0 });
-      if (err) toast(err); else setTimeout(() => PK.panels.open('invite'), 500);
+      if (err) toast(err);
     }
     renderAll();
   }
@@ -3944,6 +3966,7 @@
     if (ui.scene && ui.scene.deckGroup && !ui.scene.deckGroup.visible) { ui.scene.deckGroup.visible = true; ui.scene.needs = true; }
     if (first) { ui.lastEv = 0; if (ui.histId !== T.id) loadHist(T.id); }
     trackHand(T);
+    trackBlinds(T);
     processEvents(T, first);
     if (T.msg && (!ui.lastMsg || ui.lastMsg !== T.msg[0])) { ui.lastMsg = T.msg[0]; if (!first || !prev) toast(T.msg[1]); logLine(T.msg[1], 'sys'); }
     handleVote(T);
@@ -3951,6 +3974,16 @@
     handleAudit(T);
     refreshScene();
     renderAll();
+  }
+
+  // who posted the blinds this hand (for the SB / BB markers next to names)
+  function trackBlinds(T) {
+    if (!ui.pos || ui.pos.hn !== T.hn) ui.pos = { hn: T.hn, sb: -1, bb: -1 };
+    const ev = T.ev || [];
+    let start = -1;
+    for (let i = ev.length - 1; i >= 0; i--) if (ev[i][1] === 'hand') { start = i; break; }
+    if (start < 0) return;
+    for (let i = start + 1; i < ev.length; i++) { const e = ev[i]; if (e[1] === 'post' && (e[4] === 'sb' || e[4] === 'bb')) ui.pos[e[4]] = e[2]; }
   }
 
   function refreshScene() {
@@ -3975,7 +4008,7 @@
     for (const [, k, s, a, x] of evs) {
       const nm = seatName(s);
       switch (k) {
-        case 'hand': logLine('Hand #' + T.hn + ' · ' + ((PK.VARIANTS[x] || {}).name || ''), 'street'); break;
+        case 'hand': { const vn = (PK.VARIANTS[x] || PK.VARIANTS[T.g] || {}).name; logLine('Hand #' + T.hn + (vn ? ' · ' + vn : ''), 'street'); break; }
         case 'post': logLine(nm + ' posts ' + ({ sb: 'small blind', bb: 'big blind', ante: 'ante', straddle: 'straddle', bomb: 'bomb pot' }[x] || x) + ' ' + fmt(a)); break;
         case 'act': {
           const t = String(x);
@@ -4006,9 +4039,20 @@
     }
   }
 
+  function renderTicker() {
+    const tk = $('#ticker'); if (!tk) return;
+    let from = 0;
+    for (let i = ui.log.length - 1; i >= 0; i--) if (/^Hand #/.test(ui.log[i].text)) { from = i; break; }
+    const lines = ui.log.slice(from).slice(-5);
+    tk.textContent = '';
+    tk.hidden = !lines.length || !ui.T;
+    for (const l of lines) tk.append(h('div', { class: 'tl' + (l.cls ? ' ' + l.cls : '') }, l.text));
+    tk.onclick = () => toggleDrawer(true, 'log');
+  }
   function logLine(text, cls) {
     ui.log.push({ text, cls });
     if (ui.log.length > 300) ui.log.shift();
+    renderTicker();
     const f = $('#feed-log');
     const atBottom = f.scrollHeight - f.scrollTop - f.clientHeight < 40;
     f.append(h('div', { class: 'logline' + (cls ? ' ' + cls : '') }, text));
@@ -4081,12 +4125,23 @@
         const potNow = (T.pot || 0) + T.S.reduce((a, s) => a + (s ? s[4] : 0), 0);
         say('Your turn. ' + (la[2] ? 'You can check.' : fmt(la[1]) + ' to call.') + ' Pot ' + fmt(potNow) + '. F fold, C ' + (la[2] ? 'check' : 'call') + (la[3] ? ', R raise' : '') + '.');
         if (document.hidden && 'Notification' in window && Notification.permission === 'granted') { try { new Notification('Your turn at ' + T.c.n); } catch (e) {} }
+        flashTitle(true);
       }
-    } else if (ui.lastTurn && !(T.hp === 'bet' && T.ta === me)) { ui.raiseOpen = false; }
+    } else if (ui.lastTurn && !(T.hp === 'bet' && T.ta === me)) { ui.raiseOpen = false; flashTitle(false); ui.foldArm = 0; }
     // clear pre-actions at a new street or hand
     const street = T.hn + ':' + ((T.bd && T.bd[0]) || []).length;
     if (ui.preStreet !== street) { ui.preStreet = street; if (ui.pre === 'call') ui.pre = null; }
     if (!inHandLive(T)) ui.pre = null;
+  }
+
+  // background tab: blink the title so you notice it is your turn
+  function flashTitle(on) {
+    clearInterval(ui.titleTimer); ui.titleTimer = null;
+    if (!ui.baseTitle) ui.baseTitle = document.title;
+    document.title = ui.baseTitle;
+    if (!on) return;
+    let n = 0;
+    ui.titleTimer = setInterval(() => { if (!document.hidden && n > 1) { clearInterval(ui.titleTimer); document.title = ui.baseTitle; return; } document.title = (n++ % 2 ? ui.baseTitle : '● Your turn'); }, 900);
   }
 
   function defaultRaise(la) {
@@ -4107,8 +4162,13 @@
     if (!T || T.hp !== 'bet' || T.ta !== me || ui.sending) return;
     const la = T.la;
     if (k === 'raise' || k === 'bet') amount = clampRaise(amount, la);
+    if (k === 'fold' && la && la[2]) {
+      // folding when you could check for free is almost always a misclick
+      if (Date.now() - (ui.foldArm || 0) > 2500) { ui.foldArm = Date.now(); toast('You can check for free. Press Fold again to fold anyway.', { ms: 2500 }); say('You can check for free. Press F again to fold anyway.'); renderDock(); setTimeout(() => { if (ui.foldArm && Date.now() - ui.foldArm >= 2500) renderDock(); }, 2600); return; }
+    }
+    ui.foldArm = 0;
     if (k === 'allin') {
-      if (SET.confirmAllin && Date.now() - ui.allinArm > 2500) { ui.allinArm = Date.now(); toast('Press A again (or click All-in again) to confirm.', { ms: 2500 }); say('Press A again to confirm all in.'); renderDock(); return; }
+      if (SET.confirmAllin && Date.now() - ui.allinArm > 2500) { ui.allinArm = Date.now(); ui.raiseTo = la[5]; toast('Press again to confirm all-in.', { ms: 2500 }); say('Press A again to confirm all in.'); renderDock(); setTimeout(() => renderDock(), 2600); return; }
       ui.allinArm = 0;
     }
     ui.sending = true;
@@ -4192,6 +4252,9 @@
     if (lv && T.lvl) { const ms = Math.max(0, T.lvl[4] - T.now - (Date.now() - ui.recvAt)); lv.textContent = mmss(ms); }
     const cd = $('#nextcd');
     if (cd && T.nx) { const ms = Math.max(0, T.nx - T.now - (Date.now() - ui.recvAt)); cd.textContent = Math.ceil(ms / 1000) + 's'; }
+    // seconds left for whoever is acting (shown in the last 10 seconds)
+    const sx = document.querySelector('.seat.toact .secs');
+    if (sx && T.dl) { const s = Math.ceil(Math.max(0, T.dl - T.now - (Date.now() - ui.recvAt)) / 1000); sx.textContent = s <= 10 ? s + 's' : ''; sx.classList.toggle('show', s <= 10); }
     // warning tick in the last seconds of my turn
     if (T.hp === 'bet' && T.ta === mySeat() && T.dl) {
       const left = T.dl - T.now - (Date.now() - ui.recvAt);
@@ -4207,7 +4270,8 @@
     const box = $('#center');
     const T = ui.T, me = mySeat();
     const wt = Date.now() - (ui.enteredAt || 0);
-    const key = [!!T, ui.mode, ui.connecting, me, T && T.ph, ui.joinDismissed, wt > 5000, wt > 12000, wt > 25000, ui.bus && ui.bus.connected()].join('|');
+    const seated = T ? T.S.filter(Boolean).length : 0;
+    const key = [!!T, ui.mode, ui.connecting, me, T && T.ph, ui.joinDismissed, wt > 5000, wt > 12000, wt > 25000, ui.bus && ui.bus.connected(), seated, !!client.host, ui.code].join('|');
     if (key === ui.centerKey && box.children.length) return;
     ui.centerKey = key;
     box.textContent = '';
@@ -4219,6 +4283,7 @@
         h('p', null, 'Hold’em, Omaha and more, dealt on a 3D table. Make a table, send your friends the link, and they’re in. No sign-up.'),
         name,
         h('button', { class: 'btn primary big', id: 'quickstart', onclick: () => { client.setNick(name.value); PK.enterRoom(PK.relay.newCode(), { create: true }); } }, 'Create a table'),
+        joinByCode(name),
         h('div', { class: 'row' },
           h('button', { class: 'btn', onclick: () => { client.setNick(name.value); practice(5); } }, 'Practise vs bots'),
           h('button', { class: 'btn ghost', onclick: () => { client.setNick(name.value); PK.panels.open('setup'); } }, 'Table options')),
@@ -4246,6 +4311,26 @@
         client.host ? h('button', { class: 'btn primary', onclick: () => client.host.resetTournament() }, 'Set up a rematch') : h('p', { class: 'note' }, 'The host can start a rematch.')));
       return;
     }
+    // seated but alone: invite friends right here (link, copy, share), or add a bot to start now
+    if (T && me >= 0 && T.ph === 'wait' && seated < 2 && T.c.m === 'cash') {
+      const card = h('div', { class: 'card stack waitcard' }, h('h1', null, ui.mode === 'online' ? 'Invite your friends' : 'Add some players'));
+      if (ui.mode === 'online') {
+        const url = PK.inviteUrl();
+        const inp = h('input', { class: 'input big num', id: 'wait-url', value: url, readonly: true, 'aria-label': 'Invite link', onfocus: (e) => e.target.select() });
+        const copy = h('button', { class: 'btn primary big', type: 'button', onclick: async () => {
+          try { await navigator.clipboard.writeText(url); copy.textContent = 'Copied! Now paste it to your friends'; setTimeout(() => { copy.textContent = 'Copy invite link'; }, 2200); }
+          catch (e) { inp.focus(); inp.select(); copy.textContent = 'Press Ctrl+C (or Cmd+C) to copy'; }
+        } }, 'Copy invite link');
+        const row = h('div', { class: 'row' });
+        if (navigator.share) row.append(h('button', { class: 'btn', type: 'button', onclick: () => navigator.share({ title: 'Back Room Poker', text: 'Come play poker with me', url }).catch(() => {}) }, 'Share…'));
+        row.append(h('button', { class: 'btn ghost', type: 'button', onclick: () => PK.panels.open('invite') }, 'Show QR code'));
+        card.append(h('p', null, 'Send this link. Friends open it, type a name and tap ', h('b', null, 'Sit down'), '. The game starts as soon as two people are seated.'), inp, copy, row);
+      }
+      if (client.host) card.append(h('div', { class: 'row' }, h('button', { class: 'btn', type: 'button', onclick: () => { const err = client.host.addBot(); if (err) toast(err); } }, ui.mode === 'online' ? 'Add a bot while you wait' : 'Add a bot')));
+      if (ui.mode === 'online') card.append(h('p', { class: 'note' }, 'Keep this page open: your device deals the cards.'));
+      box.append(card);
+      return;
+    }
     // a visitor who has not sat down yet: one obvious step
     if (T && me < 0 && !ui.joinDismissed) {
       const sngLocked = T.c.m === 'sng' && T.lvl && T.lvl[5];
@@ -4258,6 +4343,19 @@
       box.append(card);
       setTimeout(() => { const i = $('#join-name'); if (i && !i.value) i.focus({ preventScroll: true }); }, 50);
     }
+  }
+  // "Got a link from a friend?" box on the first screen: paste a link or type the code
+  function joinByCode(nameInp) {
+    const inp = h('input', { class: 'input', id: 'join-code', placeholder: 'Paste a friend’s link or code', 'aria-label': 'Friend’s link or table code', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+    const go = () => {
+      const raw = inp.value.trim();
+      const code = PK.relay.parseCode(raw.includes('#') ? raw.split('#').pop() : raw);
+      if (!code) { toast('That doesn’t look like a table link. It ends with a code like abcd-efgh-jkmn.'); inp.focus(); return; }
+      client.setNick(nameInp.value);
+      PK.enterRoom(code, {});
+    };
+    inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    return h('div', { class: 'joinrow' }, inp, h('button', { class: 'btn', type: 'button', id: 'join-go', onclick: go }, 'Join'));
   }
   function start(cfg, bots) {
     if (!ui.mode) return PK.enterRoom(PK.relay.newCode(), { create: true, cfg, bots });
@@ -4314,12 +4412,17 @@
         el.append(h('div', { class: 'lastact ' + (la ? 'show ' + la.toLowerCase().replace(/\s+/g, '-') : ''), 'aria-hidden': !la }, la || ' '));
       }
       const tags = h('div', { class: 'tags' });
+      const handOn = T.hp && T.hp !== 'shuffle' && T.hn > 0;
+      if (handOn && i === T.btn) tags.append(h('span', { class: 'tag pos d', title: 'Dealer button' }, 'D'));
+      if (handOn && ui.pos && ui.pos.hn === T.hn && i === ui.pos.sb && i !== T.btn) tags.append(h('span', { class: 'tag pos', title: 'Small blind' }, 'SB'));
+      if (handOn && ui.pos && ui.pos.hn === T.hn && i === ui.pos.bb) tags.append(h('span', { class: 'tag pos', title: 'Big blind' }, 'BB'));
       if ((f & F.ALLIN) && !/all/i.test(shownAct)) tags.append(h('span', { class: 'tag', style: { color: 'var(--allin)' } }, 'All-in'));
       if (f & F.DISC) tags.append(h('span', { class: 'tag' }, 'Offline'));
       else if (f & F.OUT) tags.append(h('span', { class: 'tag' }, f & F.AWAY ? 'Away' : 'Sitting out'));
       else if ((f & F.BUST) && !(f & F.IN)) tags.append(h('span', { class: 'tag' }, 'Busted'));
 
       const timer = h('div', { class: 'timer' + (T.tbu ? ' bank' : '') }, h('i'));
+      if (T.hp === 'bet' && T.ta === i && T.dl) tags.append(h('span', { class: 'tag secs num', 'aria-hidden': 'true' }, ''));
       const plate = h('div', { class: 'plate', role: 'group', 'aria-label': e[1] + ', ' + fmt(e[3]) + ' chips' + (f & F.FOLD ? ', folded' : '') + (f & F.ALLIN ? ', all in' : '') },
         tags,
         h('div', { class: 'avatar', style: { background: colorOf(e[2]) }, 'aria-hidden': 'true' }, initials(e[1])),
@@ -4345,10 +4448,21 @@
       const many = T.res.length > 1;
       const text = r[3].length > 1 ? names + ' split the pot' : names + ' wins' + (many ? '' : ' ' + fmt(r[4]));
       const sub = T.unc >= 0 ? 'Everyone else folded.' : r[5] + (r[7] ? '. ' + r[7] : '');
-      bi.append(h('div', { class: 'banner', role: 'status' }, text, h('small', null, sub)));
+      const banner = h('div', { class: 'banner', role: 'status' }, many ? 'Results' : text, many ? null : h('small', null, sub));
+      if (many) {
+        // side pots, split pots, hi/lo and run-it-twice: one line each
+        const runs = new Set(T.res.map((x) => x[8])).size > 1;
+        const list = h('div', { class: 'potlist' });
+        for (const x of T.res) {
+          const who = x[3].map(seatName).join(' & ');
+          const label = (runs && x[8] >= 0 ? 'Run ' + (x[8] + 1) + ' · ' : '') + (x[0] === 0 ? 'Main pot' : 'Side pot' + (x[0] > 1 ? ' ' + x[0] : '')) + (x[2] ? ' (low)' : '');
+          list.append(h('div', { class: 'potline' }, h('span', { class: 'pl' }, label), h('b', null, who + (x[3].length > 1 ? ' split ' : ' wins ') + fmt(x[4])), T.unc >= 0 ? null : h('span', { class: 'ph' }, x[5])));
+        }
+        banner.append(list);
+      }
+      bi.append(banner);
       bi.append(h('button', { class: 'btn small', onclick: () => PK.panels.open('rules', false, 'hand'), style: { pointerEvents: 'auto' } }, 'Why did that win?'));
     } else if (T.hp === 'void') bi.append(h('div', { class: 'banner' }, 'Hand cancelled', h('small', null, 'Stacks returned to where the hand started.')));
-    else if (T.ph === 'wait' && T.S.filter(Boolean).length < 2) bi.append(h('div', { class: 'banner' }, 'Waiting for players', h('small', null, client.online ? 'Share this page with friends. Anyone who opens it can sit down.' : 'Add bots from the host tools to start.')));
     else if (T.ph === 'wait' && T.c.m === 'sng' && !(T.lvl && T.lvl[5])) bi.append(h('div', { class: 'banner' }, 'Tournament lobby', h('small', null, client.host ? 'Start the tournament from the dock when everyone is seated.' : 'Waiting for the host to start.')));
     else if (T.ph === 'paused') bi.append(h('div', { class: 'banner' }, 'Paused'));
     else if (T.hp === 'shuffle') bi.append(h('div', { class: 'banner', style: { opacity: 0.85 } }, 'Shuffling', h('small', { class: 'num' }, 'Deck commitment ' + String(T.cm || '').slice(0, 12) + '…')));
@@ -4409,8 +4523,17 @@
   // ---------------- dock ----------------
   function renderDock() {
     const box = $('#dockin');
-    box.textContent = '';
     const T = ui.T, me = mySeat();
+    // On your turn, leave the controls alone unless something that matters changed,
+    // so a chat message or a timer update never interrupts you dragging the slider or typing an amount.
+    if (T && me >= 0 && T.hp === 'bet' && T.ta === me) {
+      const now = Date.now();
+      const key = ['turn', T.id, T.hn, T.tn, (T.la || []).join(','), ui.sending, !!(ui.foldArm && now - ui.foldArm < 2500), !!(ui.allinArm && now - ui.allinArm < 2500), T.tbu, client.myCardsHand, SET.showBB, T.hp].join('|');
+      if (key === ui.dockKey && box.querySelector('#actions')) return;
+      ui.dockKey = key;
+    } else ui.dockKey = null;
+    box.textContent = '';
+    $('#dock').classList.remove('myturn');
     if (!T) {
       if (ui.mode) box.append(h('div', { class: 'status', style: { textAlign: 'left' } }, ui.connecting || client.mode === 'starting' ? 'Connecting…' : 'Waiting for the table…'), h('div'));
       return;
@@ -4508,45 +4631,77 @@
     right.append(...bits, h('div', { class: 'status' }, T.ph === 'next' ? h('span', null, 'Next hand in ', h('span', { class: 'countdown', id: 'nextcd' }, '')) : ''));
   }
 
+  // Bet sizes the way good poker rooms offer them: multiples of the bet before the flop, pot fractions after.
+  function betPresets(T, la) {
+    const [toCall, , , , minTo, maxTo, , allTo] = la;
+    const bets = T.S.map((s) => (s ? s[4] : 0));
+    const curBet = Math.max(0, ...bets);
+    const potNow = (T.pot || 0) + bets.reduce((a, b) => a + b, 0);
+    const potAfter = potNow + toCall;
+    const bb = (T.bl && T.bl[1]) || T.c.bb;
+    const pre = !(T.bd && T.bd[0] && T.bd[0].length);
+    const out = [];
+    if (pre) {
+      const base = Math.max(curBet, bb);
+      out.push(['2.5x', base * 2.5], ['3x', base * 3], ['4x', base * 4]);
+    } else out.push(['⅓ pot', curBet + potAfter / 3], ['½ pot', curBet + potAfter / 2], ['¾ pot', curBet + potAfter * 0.75]);
+    out.push(['Pot', curBet + potAfter]);
+    out.push([maxTo < allTo ? 'Max' : 'All-in', maxTo]);
+    // drop sizes that are not legal or that repeat
+    const seen = new Set();
+    return out.map(([l, v]) => [l, clampRaise(Math.round(v / (bb >= 2 ? 1 : 1)), la)]).filter(([l, v]) => { if (seen.has(v) && !/All|Max/.test(l)) return false; seen.add(v); return v >= minTo; });
+  }
+
   function dockMyTurn(left, right, T) {
     const la = T.la || [0, 0, 1, 0, 0, 0, 0, 0];
     const [toCall, call, canCheck, canRaise, minTo, maxTo, isBet, allTo] = la;
     if (ui.sending) { right.append(h('div', { class: 'status' }, 'Sending…')); return; }
+    $('#dock').classList.add('myturn');
     const fl = (T.l || T.c.l) === 'fl';
-    const fold = h('button', { class: 'act fold', id: 'act-fold', onclick: () => sendAct('fold') }, 'Fold', h('small', null, 'F'));
-    const cc = h('button', { class: 'act call', id: 'act-call', onclick: () => sendAct(canCheck ? 'check' : 'call') }, canCheck ? 'Check' : call >= T.S[mySeat()][3] ? 'Call all-in ' + fmt(call) : 'Call ' + fmt(call), h('small', null, 'C'));
-    const acts = [fold, cc];
+    const stack = T.S[mySeat()][3];
+    const foldArmed = ui.foldArm && Date.now() - ui.foldArm < 2500;
+    const fold = h('button', { class: 'act fold' + (foldArmed ? ' armed' : ''), id: 'act-fold', onclick: () => sendAct('fold') }, foldArmed ? 'Fold anyway?' : 'Fold', h('small', null, 'F'));
+    const ccLabel = canCheck ? 'Check' : call >= stack ? 'Call all-in ' + fmt(call) : 'Call ' + fmt(call);
+    const cc = h('button', { class: 'act call', id: 'act-call', onclick: () => sendAct(canCheck ? 'check' : 'call') }, ccLabel, h('small', null, 'C'));
+    const acts = h('div', { class: 'actrow' }, fold, cc);
+    const panel = canRaise && !fl && minTo !== maxTo;
     if (canRaise) {
       if (!ui.raiseTo || ui.raiseTo < minTo || ui.raiseTo > maxTo) ui.raiseTo = defaultRaise(la);
-      const verb = isBet ? 'Bet' : 'Raise to';
       const isAll = ui.raiseTo >= allTo;
-      const rb = h('button', { class: 'act ' + (isAll ? 'allin' : 'raise'), id: 'act-raise', onclick: () => { if (!ui.raiseOpen && !fl && minTo !== maxTo) { ui.raiseOpen = true; renderDock(); focusSlider(); } else sendAct(isAll ? 'allin' : isBet ? 'bet' : 'raise', ui.raiseTo); } }, (isAll ? 'All-in ' : verb + ' ') + fmt(ui.raiseTo), h('small', null, ui.raiseOpen ? 'Enter' : 'R'));
-      acts.push(rb);
-      if (!fl && minTo !== maxTo && !ui.raiseOpen) acts.push(h('button', { class: 'act allin' + (ui.allinArm && Date.now() - ui.allinArm < 2500 ? ' armed' : ''), id: 'act-allin', onclick: () => sendAct('allin') }, ui.allinArm && Date.now() - ui.allinArm < 2500 ? 'Confirm' : (T.l || T.c.l) === 'pl' && maxTo < allTo ? 'Pot' : 'All-in', h('small', null, 'A')));
+      const verb = isBet ? 'Bet' : 'Raise to';
+      const allArmed = ui.allinArm && Date.now() - ui.allinArm < 2500;
+      const rb = h('button', { class: 'act ' + (isAll ? 'allin' : 'raise') + (allArmed && isAll ? ' armed' : ''), id: 'act-raise', onclick: () => sendAct(ui.raiseTo >= allTo ? 'allin' : isBet ? 'bet' : 'raise', ui.raiseTo) },
+        h('span', { class: 'lbl' }, allArmed && isAll ? 'Confirm all-in' : (isAll ? 'All-in ' : verb + ' ') + fmt(ui.raiseTo)), h('small', null, panel ? 'R · Enter' : 'R'));
+      acts.append(rb);
     }
-    if (ui.raiseOpen && canRaise) {
-      const potNow = (T.pot || 0) + T.S.reduce((a, s) => a + (s ? s[4] : 0), 0);
-      const potAfter = potNow + toCall;
-      const cur = minTo - (minTo - (T.S.reduce((m, s) => Math.max(m, s ? s[4] : 0), 0)));
-      void cur;
-      const curBet = T.S.reduce((m, s) => Math.max(m, s ? s[4] : 0), 0);
-      const presets = [['Min', minTo], ['⅓', curBet + potAfter / 3], ['½', curBet + potAfter / 2], ['⅔', curBet + (potAfter * 2) / 3], ['Pot', curBet + potAfter], [maxTo < allTo ? 'Max' : 'All-in', maxTo]];
-      const pbox = h('div', { class: 'presets', role: 'group', 'aria-label': 'Bet size presets' }, presets.map(([lbl, v], i) => h('button', { type: 'button', 'aria-pressed': clampRaise(v) === ui.raiseTo, title: 'Key ' + (i + 1), onclick: () => { ui.raiseTo = clampRaise(v); renderDock(); focusSlider(); } }, lbl)));
-      const step = Math.max(1, (T.bl && T.bl[1]) || T.c.bb);
-      const range = h('input', { type: 'range', id: 'raise-range', min: minTo, max: maxTo, step: 1, value: ui.raiseTo, 'aria-label': 'Raise amount', oninput: (ev) => { ui.raiseTo = clampRaise(snap(+ev.target.value, step, minTo, maxTo)); syncRaise(); } });
-      const num = h('input', { class: 'input num', id: 'raise-num', type: 'number', min: minTo, max: maxTo, step, value: ui.raiseTo, 'aria-label': 'Raise to', onchange: (ev) => { ui.raiseTo = clampRaise(+ev.target.value); syncRaise(); }, onkeydown: (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); ui.raiseTo = clampRaise(+ev.target.value); sendAct(ui.raiseTo >= allTo ? 'allin' : isBet ? 'bet' : 'raise', ui.raiseTo); } } });
-      const box = h('div', { class: 'raisebox' }, pbox, h('div', { class: 'slide' }, range, num, h('button', { class: 'btn small ghost', onclick: () => { ui.raiseOpen = false; renderDock(); }, 'aria-label': 'Close raise options' }, 'Esc')));
-      right.append(box);
+    if (panel) {
+      const bb = (T.bl && T.bl[1]) || T.c.bb;
+      const pbox = h('div', { class: 'presets', role: 'group', 'aria-label': 'Bet sizes' }, betPresets(T, la).map(([lbl, v], i) =>
+        h('button', { type: 'button', 'data-v': v, 'aria-pressed': v === ui.raiseTo ? 'true' : 'false', title: 'Key ' + (i + 1), onclick: () => { ui.raiseTo = v; syncRaise(); } }, lbl, h('span', { class: 'pv num' }, fmtN(v)))));
+      const step = Math.max(1, bb);
+      const range = h('input', { type: 'range', id: 'raise-range', min: minTo, max: maxTo, step: 1, value: ui.raiseTo, 'aria-label': 'Bet amount', oninput: (ev) => { ui.raiseTo = clampRaise(snap(+ev.target.value, step, minTo, maxTo)); syncRaise(); } });
+      const num = h('input', { class: 'input num', id: 'raise-num', type: 'number', inputmode: 'numeric', min: minTo, max: maxTo, step, value: ui.raiseTo, 'aria-label': 'Bet amount',
+        oninput: (ev) => { const v = +ev.target.value; if (v >= minTo && v <= maxTo) { ui.raiseTo = Math.round(v); syncRaise(true); } },
+        onchange: (ev) => { ui.raiseTo = clampRaise(+ev.target.value); syncRaise(); },
+        onkeydown: (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); ui.raiseTo = clampRaise(+ev.target.value); sendAct(ui.raiseTo >= allTo ? 'allin' : isBet ? 'bet' : 'raise', ui.raiseTo); } } });
+      const minus = h('button', { type: 'button', class: 'stepbtn', 'aria-label': 'Less', onclick: () => { ui.raiseTo = clampRaise(ui.raiseTo - step); syncRaise(); } }, '−');
+      const plus = h('button', { type: 'button', class: 'stepbtn', 'aria-label': 'More', onclick: () => { ui.raiseTo = clampRaise(ui.raiseTo + step); syncRaise(); } }, '+');
+      const inbb = h('span', { class: 'inbb num', id: 'raise-bb' }, bbText(ui.raiseTo, bb));
+      right.append(h('div', { class: 'betpanel' }, pbox, h('div', { class: 'slide' }, minus, range, plus, h('div', { class: 'amt' }, num, inbb))));
     }
-    right.append(...acts);
+    right.append(acts);
+    // time left for me, right in the dock
+    if (T.dl) { const tb = h('div', { class: 'docktimer' + (T.tbu ? ' bank' : '') }, h('i')); right.append(tb); startTimer(tb, T); }
   }
+  const bbText = (v, bb) => (bb ? (Math.round((v / bb) * 10) / 10) + ' BB' : '');
   const snap = (v, step, lo, hi) => (v >= hi ? hi : v <= lo ? lo : Math.round(v / step) * step);
-  function syncRaise() {
+  function syncRaise(fromTyping) {
     const T = ui.T, la = T.la;
     const r = $('#raise-range'), n = $('#raise-num'), b = $('#act-raise');
-    if (r) r.value = ui.raiseTo; if (n) n.value = ui.raiseTo;
-    if (b) { const isAll = ui.raiseTo >= la[7]; b.className = 'act ' + (isAll ? 'allin' : 'raise'); b.firstChild.textContent = (isAll ? 'All-in ' : la[6] ? 'Bet ' : 'Raise to ') + fmt(ui.raiseTo); }
-    document.querySelectorAll('.presets button').forEach((x) => x.setAttribute('aria-pressed', 'false'));
+    if (r) r.value = ui.raiseTo; if (n && !fromTyping) n.value = ui.raiseTo;
+    const bbx = $('#raise-bb'); if (bbx) bbx.textContent = bbText(ui.raiseTo, (T.bl && T.bl[1]) || T.c.bb);
+    if (b) { const isAll = ui.raiseTo >= la[7]; b.className = 'act ' + (isAll ? 'allin' : 'raise'); b.querySelector('.lbl').textContent = (isAll ? 'All-in ' : la[6] ? 'Bet ' : 'Raise to ') + fmt(ui.raiseTo); }
+    document.querySelectorAll('.presets button').forEach((x) => x.setAttribute('aria-pressed', String(+x.dataset.v === ui.raiseTo)));
   }
   function focusSlider() { setTimeout(() => { const r = $('#raise-num'); if (r) { r.focus(); r.select(); } }, 20); }
 
@@ -4571,18 +4726,22 @@
       if (myTurn && la) {
         if (k === 'f') { handled(); return sendAct('fold'); }
         if (k === 'c' || k === ' ' || k === 'k') { handled(); return sendAct(la[2] ? 'check' : 'call'); }
-        if ((k === 'r' || k === 'b') && la[3]) { handled(); if (!ui.raiseOpen && (T.l || T.c.l) !== 'fl' && la[4] !== la[5]) { ui.raiseOpen = true; renderDock(); focusSlider(); } else sendAct(ui.raiseTo >= la[7] ? 'allin' : la[6] ? 'bet' : 'raise', ui.raiseTo); return; }
-        if (k === 'a' && la[3]) { handled(); return sendAct('allin'); }
-        if (k === 'Enter' && ui.raiseOpen) { handled(); return sendAct(ui.raiseTo >= la[7] ? 'allin' : la[6] ? 'bet' : 'raise', ui.raiseTo); }
-        if (/^[1-6]$/.test(k) && la[3]) {
+        const sendRaise = () => sendAct(ui.raiseTo >= la[7] ? 'allin' : la[6] ? 'bet' : 'raise', ui.raiseTo);
+        if ((k === 'r' || k === 'b') && la[3]) {
           handled();
-          if (!ui.raiseOpen) { ui.raiseOpen = true; }
-          renderDock();
+          const n = $('#raise-num');
+          if (n && document.activeElement !== n) { n.focus(); n.select(); say('Bet amount ' + ui.raiseTo + '. Type an amount, then Enter.'); } else sendRaise();
+          return;
+        }
+        if (k === 'a' && la[3]) { handled(); return sendAct('allin'); }
+        if (k === 'Enter' && la[3] && $('#raise-num')) { handled(); return sendRaise(); }
+        if (/^[1-5]$/.test(k) && la[3]) {
+          handled();
           const btns = document.querySelectorAll('.presets button');
           if (btns[+k - 1]) btns[+k - 1].click();
           return;
         }
-        if ((k === 'ArrowUp' || k === 'ArrowDown') && ui.raiseOpen) {
+        if ((k === 'ArrowUp' || k === 'ArrowDown') && la[3]) {
           handled();
           const step = ((T.bl && T.bl[1]) || T.c.bb) * (ev.shiftKey ? 5 : 1);
           ui.raiseTo = clampRaise(ui.raiseTo + (k === 'ArrowUp' ? step : -step));
