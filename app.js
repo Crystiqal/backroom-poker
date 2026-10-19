@@ -2587,18 +2587,29 @@
     o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + 0.05);
   }
   const at = (ms) => ctx.currentTime + (ms || 0) / 1000;
+  // a soft bell: a few inharmonic sine partials with long, gentle decays (sounds like a small brass bell, not a beep)
+  function bell(t, f, dur, gain) {
+    [[1, 1], [2.76, 0.32], [5.4, 0.12], [8.93, 0.05]].forEach(([r, g]) => tone(t, f * r, dur / Math.sqrt(r), gain * g, 'sine'));
+  }
+  // one clay chip landing on another: a sharp, short, inharmonic click with a hard body thump
+  function clack(t, g) {
+    noise(t, 0.028, 3400 + Math.random() * 900, 6, 0.22 * g);
+    noise(t, 0.045, 1800 + Math.random() * 300, 4, 0.12 * g);
+    tone(t, 2300 + Math.random() * 400, 0.035, 0.05 * g, 'sine');
+    noise(t, 0.06, 420, 0.8, 0.06 * g, 'lowpass');
+  }
   PK.sfx = {
     settings: S,
     set(vol, muted) { S.volume = vol; S.muted = muted; if (master) master.gain.value = muted ? 0 : vol; },
     deal(delay) { if (!ok()) return; const t = at(delay); noise(t, 0.05, 3200, 1.2, 0.35); noise(t + 0.03, 0.04, 1500, 0.8, 0.12, 'lowpass'); },
-    chips(delay) { if (!ok()) return; const t = at((delay || 0) + 300); for (let i = 0; i < 3; i++) { const tt = t + i * 0.035 + Math.random() * 0.01; tone(tt, 3100 + Math.random() * 600, 0.05, 0.08, 'triangle'); noise(tt, 0.03, 5200, 2, 0.12); } },
+    chips(delay) { if (!ok()) return; const t = at((delay || 0) + 300); const n = 3 + Math.floor(Math.random() * 3); for (let i = 0; i < n; i++) clack(t + i * (0.028 + Math.random() * 0.03), 1 - i * 0.12); },
     shuffle() { if (!ok()) return; const t = at(300); for (let i = 0; i < 24; i++) noise(t + i * 0.022, 0.03, 2600 + Math.random() * 1200, 1.5, 0.16); },
-    check() { if (!ok()) return; const t = at(0); tone(t, 190, 0.09, 0.35); tone(t + 0.13, 175, 0.09, 0.3); },
+    check() { if (!ok()) return; const t = at(0); [0, 0.14].forEach((d, i) => { noise(t + d, 0.07, 260, 1.2, 0.3 - i * 0.06, 'lowpass'); tone(t + d, 120, 0.06, 0.18 - i * 0.04); }); },
     fold() { if (!ok()) return; noise(at(0), 0.22, 900, 0.7, 0.18, 'lowpass'); },
-    turn() { if (!ok()) return; const t = at(0); tone(t, 659, 0.35, 0.18); tone(t + 0.14, 880, 0.5, 0.16); },
-    win() { if (!ok()) return; const t = at(0); [523, 659, 784, 1047].forEach((f, i) => tone(t + i * 0.09, f, 0.5, 0.12, 'triangle')); },
+    turn() { if (!ok()) return; const t = at(0); bell(t, 880, 1.1, 0.16); bell(t + 0.16, 1318.5, 1.3, 0.12); },
+    win() { if (!ok()) return; const t = at(0); [784, 988, 1175, 1568].forEach((f, i) => bell(t + i * 0.11, f, 1.6, 0.1)); for (let i = 0; i < 7; i++) clack(t + 0.5 + i * 0.045, 0.7); },
     allin() { if (!ok()) return; const t = at(0); tone(t, 70, 0.6, 0.4); noise(t, 0.5, 6000, 0.5, 0.05, 'highpass'); },
-    blip() { if (!ok()) return; tone(at(0), 1200, 0.08, 0.06); },
+    blip() { if (!ok()) return; bell(at(0), 1568, 0.6, 0.05); },
     tick() { if (!ok()) return; tone(at(0), 1600, 0.03, 0.05, 'square'); },
   };
 })(typeof window !== 'undefined' ? (window.PK = window.PK || {}) : (globalThis.PK = globalThis.PK || {}));
@@ -2608,14 +2619,15 @@
 (function (PK) {
   'use strict';
   const T3 = () => window.THREE;
+  // casino chip colours, deep and rich; s = edge-spot colour, g = inlay ring
   const DENOMS = [
-    { v: 100000, c: '#d65d8e', s: '#fbe3ee' }, { v: 25000, c: '#2aa6a6', s: '#e7fbfb' }, { v: 5000, c: '#e07a2e', s: '#fff1e2' },
-    { v: 1000, c: '#e9c33d', s: '#2b2414' }, { v: 500, c: '#7b4bb8', s: '#f1e9ff' }, { v: 100, c: '#1c1c22', s: '#e9e4d8' },
-    { v: 25, c: '#1f8a4c', s: '#f2fff6' }, { v: 5, c: '#c93636', s: '#fff0ee' }, { v: 1, c: '#e9e4d8', s: '#3a5bb5' },
+    { v: 100000, c: '#6e1a3f', s: '#f3e6d0', g: '#d9b56a' }, { v: 25000, c: '#155a6e', s: '#f3e6d0', g: '#d9b56a' }, { v: 5000, c: '#8a4a1f', s: '#f3e6d0', g: '#e3c17a' },
+    { v: 1000, c: '#c99a2e', s: '#1b1611', g: '#2a2116' }, { v: 500, c: '#46286f', s: '#f3e6d0', g: '#d9b56a' }, { v: 100, c: '#141317', s: '#e9dfc9', g: '#d9b56a' },
+    { v: 25, c: '#14583a', s: '#f3e6d0', g: '#d9b56a' }, { v: 5, c: '#9a1f27', s: '#f3e6d0', g: '#d9b56a' }, { v: 1, c: '#ece4d2', s: '#1f3f7a', g: '#b08a43' },
   ];
   PK.DENOMS = DENOMS;
   const FELTS = {
-    green: { felt: '#17614a', deep: '#0b3a2b', line: '#c9a85a' },
+    green: { felt: '#0f5a42', deep: '#05261b', line: '#d1b06a' },
     blue: { felt: '#1d4f7a', deep: '#0e2a45', line: '#c9b06a' },
     red: { felt: '#7a2430', deep: '#43121a', line: '#d4ae6a' },
     purple: { felt: '#4a2d6e', deep: '#25163a', line: '#c7a76a' },
@@ -2643,8 +2655,8 @@
       this.renderer.shadowMap.enabled = this.opts.quality !== 'low';
       this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
       this.scene = new THREE.Scene();
-      this.scene.background = new THREE.Color('#0d0b0a');
-      this.scene.fog = new THREE.Fog('#0d0b0a', 14, 30);
+      this.scene.background = new THREE.Color('#070505');
+      this.scene.fog = new THREE.Fog('#070505', 12, 26);
       this.camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
       this.anims = [];
       this.cards = new Map();
@@ -2653,7 +2665,7 @@
       this.texCache = new Map();
       this.layoutCbs = [];
       this.n = 9; this.me = -1; this.portrait = false;
-      if (typeof document !== 'undefined' && document.fonts && document.fonts.load) document.fonts.load('700 100px "Instrument Sans"').then(() => { this.fontsReady = true; this.refreshFaces(); }).catch(() => {});
+      if (typeof document !== 'undefined' && document.fonts && document.fonts.load) Promise.all([document.fonts.load('600 100px "Jost"'), document.fonts.load('600 100px "Cinzel"')]).then(() => { this.fontsReady = true; this.refreshAllTextures(); }).catch(() => {});
       this.needs = true; this.lastHn = -1; this.lastHp = '';
       this.camT = 0; this.drag = null; this.orbit = { yaw: 0, pitch: 0, zoom: 1 };
       this.buildLights();
@@ -2672,8 +2684,9 @@
     buildLights() {
       const THREE = T3();
       this.buildEnvironment();
-      this.scene.add(new THREE.HemisphereLight('#ffe9cc', '#1a1310', 0.35));
-      const spot = new THREE.SpotLight('#fff1d6', 2.4, 30, 0.72, 0.7, 0);
+      this.scene.add(new THREE.HemisphereLight('#ffe9cc', '#0e0a08', 0.2));
+      // one warm lamp over the table: a pool of light that falls off into a dark room
+      const spot = new THREE.SpotLight('#fff0d4', 3.1, 30, 0.6, 0.85, 0);
       spot.position.set(0, 9, 1.2);
       spot.target.position.set(0, 0, 0);
       spot.castShadow = true;
@@ -2695,7 +2708,7 @@
       const THREE = T3();
       try {
         const env = new THREE.Scene();
-        env.background = new THREE.Color('#120d0a');
+        env.background = new THREE.Color('#0b0806');
         const panel = (w, h, color, k, pos, look) => {
           const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(k), side: THREE.DoubleSide }));
           m.position.set(...pos); m.lookAt(...look); env.add(m);
@@ -2724,17 +2737,17 @@
       g.add(felt);
       // brass trim
       const trimShape = ell(rx + 0.07, rz + 0.07); trimShape.holes.push(ell(rx - 0.01, rz - 0.01));
-      const trim = new THREE.Mesh(new THREE.ExtrudeGeometry(trimShape, { depth: 0.035, bevelEnabled: false, curveSegments: 96 }), new THREE.MeshStandardMaterial({ color: '#c79a4a', metalness: 1, roughness: 0.26, envMapIntensity: 1.2 }));
+      const trim = new THREE.Mesh(new THREE.ExtrudeGeometry(trimShape, { depth: 0.035, bevelEnabled: false, curveSegments: 96 }), new THREE.MeshStandardMaterial({ color: '#d4ad62', metalness: 1, roughness: 0.22, envMapIntensity: 1.35 }));
       trim.rotation.x = -Math.PI / 2; trim.position.y = -0.01; trim.receiveShadow = true;
       g.add(trim);
       // padded leather rail
       const railShape = ell(rx + 0.62, rz + 0.62); railShape.holes.push(ell(rx + 0.16, rz + 0.16));
-      const rail = new THREE.Mesh(new THREE.ExtrudeGeometry(railShape, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.11, bevelSegments: 6, curveSegments: 96 }), new THREE.MeshPhysicalMaterial({ color: '#2a1610', roughness: 0.5, metalness: 0, clearcoat: 0.55, clearcoatRoughness: 0.32, bumpMap: this.noiseTex(), bumpScale: 0.6, envMapIntensity: 0.9 }));
+      const rail = new THREE.Mesh(new THREE.ExtrudeGeometry(railShape, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.12, bevelSize: 0.11, bevelSegments: 6, curveSegments: 96 }), new THREE.MeshPhysicalMaterial({ color: '#0d0a0a', roughness: 0.58, metalness: 0, clearcoat: 0.35, clearcoatRoughness: 0.38, bumpMap: this.noiseTex(), bumpScale: 0.5, envMapIntensity: 0.45 }));
       rail.rotation.x = -Math.PI / 2; rail.position.y = 0.0; rail.castShadow = true; rail.receiveShadow = true;
       g.add(rail);
       // wooden apron
       const apronShape = ell(rx + 0.78, rz + 0.78); apronShape.holes.push(ell(rx + 0.2, rz + 0.2));
-      const apron = new THREE.Mesh(new THREE.ExtrudeGeometry(apronShape, { depth: 0.3, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 2, curveSegments: 64 }), new THREE.MeshPhysicalMaterial({ color: '#3b2114', roughness: 0.38, clearcoat: 0.8, clearcoatRoughness: 0.18, envMapIntensity: 1 }));
+      const apron = new THREE.Mesh(new THREE.ExtrudeGeometry(apronShape, { depth: 0.3, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.03, bevelSegments: 2, curveSegments: 64 }), new THREE.MeshPhysicalMaterial({ color: '#1c120c', roughness: 0.32, clearcoat: 0.9, clearcoatRoughness: 0.12, envMapIntensity: 1.1 }));
       apron.rotation.x = -Math.PI / 2; apron.position.y = -0.42;
       g.add(apron);
       // floor
@@ -2774,11 +2787,21 @@
       x.beginPath(); x.ellipse(W / 2, H / 2, W * 0.36, H * 0.36, 0, 0, Math.PI * 2); x.stroke();
       x.globalAlpha = 0.25; x.lineWidth = W * 0.0015;
       x.beginPath(); x.ellipse(W / 2, H / 2, W * 0.375, H * 0.375, 0, 0, Math.PI * 2); x.stroke();
-      // wordmark
-      x.globalAlpha = 0.13; x.fillStyle = F.line;
-      x.font = `800 ${Math.round(W * 0.05)}px "Big Shoulders Display", Impact, sans-serif`;
-      x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.fillText('BACK  ROOM', W / 2, H / 2 + (this.portrait ? H * 0.2 : H * 0.23));
+      // engraved crest: thin double ring, monogram, small letter-spaced name
+      const cx = W / 2, cy = H / 2 + (this.portrait ? H * 0.19 : H * 0.22), R = W * (this.portrait ? 0.06 : 0.036);
+      x.strokeStyle = F.line; x.fillStyle = F.line;
+      x.globalAlpha = 0.13; x.lineWidth = W * 0.0014;
+      x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2); x.stroke();
+      x.globalAlpha = 0.09; x.lineWidth = W * 0.0007;
+      x.beginPath(); x.arc(cx, cy, R * 0.86, 0, Math.PI * 2); x.stroke();
+      x.globalAlpha = 0.13; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.font = `600 ${Math.round(R * 0.82)}px "Cinzel", "Times New Roman", serif`;
+      x.fillText('BR', cx, cy + R * 0.04);
+      x.globalAlpha = 0.11;
+      x.font = `600 ${Math.round(R * 0.3)}px "Cinzel", "Times New Roman", serif`;
+      if (x.letterSpacing !== undefined) x.letterSpacing = Math.round(R * 0.14) + 'px';
+      x.fillText('BACK  ROOM', cx, cy + R * 1.42);
+      if (x.letterSpacing !== undefined) x.letterSpacing = '0px';
       x.globalAlpha = 1;
       return c;
     }
@@ -2799,7 +2822,7 @@
       const c = document.createElement('canvas'); c.width = c.height = 512;
       const x = c.getContext('2d');
       const g = x.createRadialGradient(256, 256, 10, 256, 256, 256);
-      g.addColorStop(0, '#2a1d17'); g.addColorStop(0.5, '#161010'); g.addColorStop(1, '#0d0b0a');
+      g.addColorStop(0, '#1f1712'); g.addColorStop(0.45, '#100c0a'); g.addColorStop(1, '#070505');
       x.fillStyle = g; x.fillRect(0, 0, 512, 512);
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
       return t;
@@ -2810,7 +2833,7 @@
       const { rx, rz } = this.radii();
       this.feltMesh.material = this.feltMaterial(rx, rz);
       this.texCache.forEach((v, k) => { if (k.startsWith('back')) this.texCache.delete(k); });
-      for (const c of this.cards.values()) if (!c.face) c.back.material.map = this.backTex();
+      for (const c of this.cards.values()) { c.back.material.map = this.backTex(); c.back.material.needsUpdate = true; }
       this.deckCards.forEach((m) => { m.children[1].material.map = this.backTex(); });
       this.needs = true;
     }
@@ -2872,7 +2895,7 @@
       x.restore();
       // big rank, squeezed to fit when wide (10, Q, K...)
       x.fillStyle = col; x.textAlign = 'left'; x.textBaseline = 'alphabetic';
-      x.font = `600 ${fs}px "Instrument Sans", "Helvetica Neue", Arial, "Roboto", system-ui, sans-serif`;
+      x.font = `600 ${fs}px "Jost", "Futura", "Avenir Next", "Helvetica Neue", Arial, sans-serif`;
       const maxW = W * 0.6, mw = x.measureText(rank).width;
       const sx = Math.min(1, maxW / mw) * (rank === '10' ? 0.9 : 1);
       x.save(); x.translate(44, fs * 0.82 + 34); x.scale(sx, 1); x.fillText(rank, 0, 0); x.restore();
@@ -2892,12 +2915,22 @@
         c.hl = state;
         c.front.material.color.setScalar(state === -1 ? 0.5 : 1);
         if (state === 1 && !c.glow) {
-          const g = new THREE.Mesh(new THREE.PlaneGeometry(CW + 0.07, CH + 0.07), new THREE.MeshBasicMaterial({ color: '#f3cd6a', transparent: true, opacity: 0.95, toneMapped: false }));
+          const g = new THREE.Mesh(new THREE.PlaneGeometry(CW + 0.04, CH + 0.04), new THREE.MeshBasicMaterial({ color: '#ecd18a', transparent: true, opacity: 0.85, toneMapped: false }));
           g.position.z = -0.001;
           c.grp.add(g); c.glow = g;
         }
         if (c.glow) c.glow.visible = state === 1;
       }
+      this.needs = true;
+    }
+    // fonts arrived after the first draw: repaint everything that has lettering on it
+    refreshAllTextures() {
+      this.refreshFaces();
+      try {
+        this.chipMats = DENOMS.map((d) => this.chipTextures(d));
+        this.chipMeshes.forEach((m, i) => { m.material = this.chipMats[i]; });
+        this.setFelt(this.opts.felt);
+      } catch (e) {}
       this.needs = true;
     }
     // redraw faces once the card font has loaded (the first textures may have used a fallback font)
@@ -2915,19 +2948,32 @@
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const x = c.getContext('2d');
       const F = FELTS[this.opts.felt] || FELTS.green;
-      const base = this.opts.back === 'crimson' ? '#7d1f2b' : this.opts.back === 'navy' ? '#1b2c55' : this.opts.back === 'black' ? '#15151a' : F.deep;
-      x.fillStyle = '#fbf8f1'; x.fillRect(0, 0, W, H);
-      x.fillStyle = base; x.fillRect(26, 26, W - 52, H - 52);
-      x.strokeStyle = 'rgba(232,206,140,0.45)'; x.lineWidth = 2.5;
-      for (let i = -H; i < W + H; i += 30) { x.beginPath(); x.moveTo(i, 26); x.lineTo(i + H, H - 26); x.stroke(); x.beginPath(); x.moveTo(i + H, 26); x.lineTo(i, H - 26); x.stroke(); }
-      x.strokeStyle = '#e8ce8c'; x.lineWidth = 6; x.strokeRect(40, 40, W - 80, H - 80);
-      x.lineWidth = 2; x.strokeRect(52, 52, W - 104, H - 104);
-      x.fillStyle = base; x.beginPath(); x.arc(W / 2, H / 2, 112, 0, Math.PI * 2); x.fill();
-      x.strokeStyle = '#e8ce8c'; x.lineWidth = 6; x.beginPath(); x.arc(W / 2, H / 2, 112, 0, Math.PI * 2); x.stroke();
-      x.lineWidth = 2; x.beginPath(); x.arc(W / 2, H / 2, 98, 0, Math.PI * 2); x.stroke();
-      x.fillStyle = '#e8ce8c'; x.textAlign = 'center'; x.textBaseline = 'middle';
-      x.font = '800 104px "Big Shoulders Display", Impact, sans-serif';
-      x.fillText('BR', W / 2, H / 2 + 6);
+      const base = this.opts.back === 'crimson' ? '#5c1520' : this.opts.back === 'navy' ? '#13213f' : this.opts.back === 'black' ? '#111013' : '#141011';
+      const gold = '#d4b26c';
+      x.fillStyle = '#f7f1e3'; x.fillRect(0, 0, W, H);
+      x.fillStyle = base; x.fillRect(22, 22, W - 44, H - 44);
+      // fine diamond lattice
+      x.save(); x.beginPath(); x.rect(44, 44, W - 88, H - 88); x.clip();
+      x.strokeStyle = gold; x.globalAlpha = 0.28; x.lineWidth = 1.4;
+      for (let i = -H; i < W + H; i += 26) { x.beginPath(); x.moveTo(i, 0); x.lineTo(i + H, H); x.stroke(); x.beginPath(); x.moveTo(i + H, 0); x.lineTo(i, H); x.stroke(); }
+      x.restore(); x.globalAlpha = 1;
+      // double frame
+      x.strokeStyle = gold; x.lineWidth = 3; x.strokeRect(40, 40, W - 80, H - 80);
+      x.globalAlpha = 0.6; x.lineWidth = 1.2; x.strokeRect(50, 50, W - 100, H - 100); x.globalAlpha = 1;
+      // corner fans
+      for (const [px, py, a] of [[40, 40, 0], [W - 40, 40, Math.PI / 2], [W - 40, H - 40, Math.PI], [40, H - 40, -Math.PI / 2]]) {
+        x.save(); x.translate(px, py); x.rotate(a); x.strokeStyle = gold; x.lineWidth = 1.6;
+        for (let r = 18; r <= 54; r += 12) { x.beginPath(); x.arc(0, 0, r, 0, Math.PI / 2); x.stroke(); }
+        x.restore();
+      }
+      // medallion
+      x.fillStyle = base; x.beginPath(); x.ellipse(W / 2, H / 2, 118, 150, 0, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = gold; x.lineWidth = 3.5; x.beginPath(); x.ellipse(W / 2, H / 2, 118, 150, 0, 0, Math.PI * 2); x.stroke();
+      x.lineWidth = 1.2; x.beginPath(); x.ellipse(W / 2, H / 2, 104, 136, 0, 0, Math.PI * 2); x.stroke();
+      for (let i = 0; i < 16; i++) { const a = (i / 16) * Math.PI * 2; x.beginPath(); x.moveTo(W / 2 + Math.cos(a) * 104, H / 2 + Math.sin(a) * 136); x.lineTo(W / 2 + Math.cos(a) * 118, H / 2 + Math.sin(a) * 150); x.stroke(); }
+      x.fillStyle = gold; x.textAlign = 'center'; x.textBaseline = 'middle';
+      x.font = '600 96px "Cinzel", "Times New Roman", serif';
+      x.fillText('BR', W / 2, H / 2 + 4);
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
       this.texCache.set(key, t);
       return t;
@@ -2973,9 +3019,9 @@
       const THREE = T3();
       const c = document.createElement('canvas'); c.width = c.height = 128;
       const x = c.getContext('2d');
-      x.fillStyle = '#f5f1e6'; x.beginPath(); x.arc(64, 64, 62, 0, Math.PI * 2); x.fill();
-      x.strokeStyle = '#1b1b1b'; x.lineWidth = 4; x.beginPath(); x.arc(64, 64, 50, 0, Math.PI * 2); x.stroke();
-      x.fillStyle = '#1b1b1b'; x.font = '800 64px "Big Shoulders Display", Impact, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('D', 64, 68);
+      x.fillStyle = '#f4efe3'; x.beginPath(); x.arc(64, 64, 62, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = '#b8924a'; x.lineWidth = 3; x.beginPath(); x.arc(64, 64, 52, 0, Math.PI * 2); x.stroke();
+      x.fillStyle = '#17130f'; x.font = '700 58px "Cinzel", "Times New Roman", serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('D', 64, 68);
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
       const m = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.05, 40), [new THREE.MeshStandardMaterial({ color: '#e9e3d4', roughness: 0.4 }), new THREE.MeshStandardMaterial({ map: t, roughness: 0.4 }), new THREE.MeshStandardMaterial({ color: '#d8d2c2' })]);
       m.castShadow = true; m.position.y = 0.025; m.visible = false;
@@ -2991,29 +3037,36 @@
     }
 
     // ---------- chips ----------
+    // Clay casino chip: six edge inserts, a fine gold inlay ring, and a cream centre label with the value.
     chipTextures(d) {
       const THREE = T3();
       const side = document.createElement('canvas'); side.width = 512; side.height = 32;
       let x = side.getContext('2d');
       x.fillStyle = d.c; x.fillRect(0, 0, 512, 32);
-      x.fillStyle = d.s; for (let i = 0; i < 8; i++) x.fillRect(i * 64 + 20, 0, 24, 32);
-      x.fillStyle = 'rgba(0,0,0,0.18)'; x.fillRect(0, 0, 512, 3); x.fillRect(0, 29, 512, 3);
+      x.fillStyle = d.s; for (let i = 0; i < 6; i++) x.fillRect(i * (512 / 6) + 26, 4, 34, 24);
+      x.fillStyle = 'rgba(255,255,255,0.08)'; x.fillRect(0, 4, 512, 2);
+      x.fillStyle = 'rgba(0,0,0,0.25)'; x.fillRect(0, 0, 512, 3); x.fillRect(0, 29, 512, 3);
       const top = document.createElement('canvas'); top.width = top.height = 256;
       x = top.getContext('2d');
       x.fillStyle = d.c; x.beginPath(); x.arc(128, 128, 128, 0, Math.PI * 2); x.fill();
+      // edge inserts seen from above
       x.fillStyle = d.s;
-      for (let i = 0; i < 8; i++) { x.save(); x.translate(128, 128); x.rotate(i * Math.PI / 4); x.fillRect(-12, -128, 24, 30); x.restore(); }
-      x.strokeStyle = d.s; x.lineWidth = 4; x.setLineDash([10, 8]); x.beginPath(); x.arc(128, 128, 88, 0, Math.PI * 2); x.stroke(); x.setLineDash([]);
-      const ig = x.createRadialGradient(128, 110, 10, 128, 128, 74);
-      ig.addColorStop(0, 'rgba(255,255,255,0.22)'); ig.addColorStop(1, 'rgba(255,255,255,0)');
-      x.fillStyle = ig; x.beginPath(); x.arc(128, 128, 74, 0, Math.PI * 2); x.fill();
-      x.fillStyle = d.s; x.textAlign = 'center'; x.textBaseline = 'middle';
+      for (let i = 0; i < 6; i++) { x.save(); x.translate(128, 128); x.rotate(i * Math.PI / 3); x.beginPath(); x.moveTo(-15, -128); x.lineTo(15, -128); x.lineTo(11, -100); x.lineTo(-11, -100); x.closePath(); x.fill(); x.restore(); }
+      // gold inlay ring
+      x.strokeStyle = d.g || '#d9b56a'; x.lineWidth = 3; x.beginPath(); x.arc(128, 128, 94, 0, Math.PI * 2); x.stroke();
+      x.lineWidth = 1; x.globalAlpha = 0.6; x.beginPath(); x.arc(128, 128, 88, 0, Math.PI * 2); x.stroke(); x.globalAlpha = 1;
+      // cream centre label
+      const lg = x.createRadialGradient(118, 112, 8, 128, 128, 70);
+      lg.addColorStop(0, '#fbf6ea'); lg.addColorStop(1, '#e6dcc6');
+      x.fillStyle = d.v === 1 ? '#f7f1e2' : lg; x.beginPath(); x.arc(128, 128, 66, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = d.c; x.lineWidth = 2; x.beginPath(); x.arc(128, 128, 60, 0, Math.PI * 2); x.stroke();
+      x.fillStyle = d.v === 1 ? d.s : d.c; x.textAlign = 'center'; x.textBaseline = 'middle';
       const label = d.v >= 1000 ? d.v / 1000 + 'K' : String(d.v);
-      x.font = `800 ${label.length > 3 ? 52 : 68}px "Big Shoulders Display", Impact, sans-serif`;
-      x.fillText(label, 128, 132);
+      x.font = `700 ${label.length > 3 ? 40 : label.length > 2 ? 48 : 56}px "Cinzel", "Times New Roman", serif`;
+      x.fillText(label, 128, 134);
       const ts = new THREE.CanvasTexture(side), tt = new THREE.CanvasTexture(top);
       ts.colorSpace = tt.colorSpace = THREE.SRGBColorSpace; tt.anisotropy = 8;
-      const m = (map) => new THREE.MeshPhysicalMaterial({ map, roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.2, envMapIntensity: 0.8 });
+      const m = (map) => new THREE.MeshPhysicalMaterial({ map, roughness: 0.42, clearcoat: 0.45, clearcoatRoughness: 0.3, envMapIntensity: 0.7 });
       return [m(ts), m(tt), m(tt)];
     }
 
@@ -3338,8 +3391,8 @@
         if (c.up) {
           // shown cards: side by side, upright as you look at the table, leaning back so you can read them
           const ssc = c.n > 3 ? 0.9 : 1.05, gap = CW * ssc + 0.03;
-          pos.copy(this.onEllipse(c.seat, 0.82)); pos.x += (c.k - (c.n - 1) / 2) * gap;
-          if (!this.portrait && pos.z < -1.2) pos.z += 0.32; // top seats: keep shown cards clear of the name plate
+          pos.copy(this.onEllipse(c.seat, 0.8)); if (!this.portrait) pos.x *= 0.9; pos.x += (c.k - (c.n - 1) / 2) * gap;
+          if (!this.portrait && pos.z < -1.2) pos.z += 0.5; // top seats: keep shown cards clear of the name plate
           pos.y = (CH * ssc / 2) * Math.sin(TILT) + 0.02 + c.k * 0.002;
           rot.order = 'YXZ'; rot.y = 0; rot.x = -Math.PI / 2 + TILT; rot.z = 0;
           return { pos, rot, sc: ssc };
@@ -3690,7 +3743,9 @@
 
   const HUES = [28, 62, 95, 140, 170, 200, 230, 260, 290, 320, 345, 10];
   const colorOf = (c) => `oklch(0.78 0.12 ${HUES[(c | 0) % HUES.length]})`;
-  PK.colorOf = colorOf;
+  // avatars: deep jewel tones behind ivory initials (pastels read as toy-like)
+  const colorDeep = (c) => `oklch(0.46 0.085 ${HUES[(c | 0) % HUES.length]})`;
+  PK.colorOf = colorOf; PK.colorDeep = colorDeep;
   const initials = (n) => (String(n || '?').trim().split(/\s+/).map((w) => w[0]).join('').slice(0, 2) || '?').toUpperCase();
 
   // ---------------- state ----------------
@@ -3799,7 +3854,7 @@
     applyLook();
     buildChrome();
     // fonts first so card faces draw with the right typefaces
-    try { await Promise.race([Promise.all([document.fonts.load('600 92px "Instrument Sans"'), document.fonts.load('800 40px "Big Shoulders Display"')]), new Promise((r) => setTimeout(r, 1800))]); } catch (e) {}
+    try { await Promise.race([Promise.all([document.fonts.load('600 92px "Jost"'), document.fonts.load('600 40px "Cinzel"')]), new Promise((r) => setTimeout(r, 1800))]); } catch (e) {}
     try {
       if (!window.THREE) throw new Error('3D library did not load');
       ui.scene = new PK.Scene3D($('#gl'), { reduced: reducedMotion(), quality: SET.quality, fourColor: SET.fourColor, bigCards: SET.bigCards, felt: SET.felt, back: SET.back, view: SET.view });
@@ -4275,7 +4330,7 @@
     if (key === ui.centerKey && box.children.length) return;
     ui.centerKey = key;
     box.textContent = '';
-    const nameInput = (id) => h('input', { class: 'input big', id, value: client.nick || '', maxlength: 16, placeholder: 'Your name', 'aria-label': 'Your name', autocomplete: 'nickname', onchange: (e) => client.setNick(e.target.value) });
+    const nameInput = (id) => h('input', { class: 'input big', id, value: /^Player \d+$/.test(client.nick || '') ? '' : client.nick || '', maxlength: 16, placeholder: 'Your name', 'aria-label': 'Your name', autocomplete: 'nickname', onchange: (e) => client.setNick(e.target.value) });
     if (!ui.mode) {
       const name = nameInput('lobby-name');
       box.append(h('div', { class: 'card hero stack' },
@@ -4425,7 +4480,7 @@
       if (T.hp === 'bet' && T.ta === i && T.dl) tags.append(h('span', { class: 'tag secs num', 'aria-hidden': 'true' }, ''));
       const plate = h('div', { class: 'plate', role: 'group', 'aria-label': e[1] + ', ' + fmt(e[3]) + ' chips' + (f & F.FOLD ? ', folded' : '') + (f & F.ALLIN ? ', all in' : '') },
         tags,
-        h('div', { class: 'avatar', style: { background: colorOf(e[2]) }, 'aria-hidden': 'true' }, initials(e[1])),
+        h('div', { class: 'avatar', style: { background: colorDeep(e[2]) }, 'aria-hidden': 'true' }, initials(e[1])),
         h('div', { style: { minWidth: 0 } }, h('div', { class: 'pname' }, e[1], f & F.BOT ? h('span', { class: 'botmark' }, ' bot') : null), h('div', { class: 'pstack' }, fmt(e[3]))),
         timer);
       el.append(plate);
@@ -4460,8 +4515,8 @@
         }
         banner.append(list);
       }
+      if (!(T.unc >= 0)) banner.append(h('div', null, h('button', { class: 'why', type: 'button', onclick: () => PK.panels.open('rules', false, 'hand') }, 'Why did that win?')));
       bi.append(banner);
-      bi.append(h('button', { class: 'btn small', onclick: () => PK.panels.open('rules', false, 'hand'), style: { pointerEvents: 'auto' } }, 'Why did that win?'));
     } else if (T.hp === 'void') bi.append(h('div', { class: 'banner' }, 'Hand cancelled', h('small', null, 'Stacks returned to where the hand started.')));
     else if (T.ph === 'wait' && T.c.m === 'sng' && !(T.lvl && T.lvl[5])) bi.append(h('div', { class: 'banner' }, 'Tournament lobby', h('small', null, client.host ? 'Start the tournament from the dock when everyone is seated.' : 'Waiting for the host to start.')));
     else if (T.ph === 'paused') bi.append(h('div', { class: 'banner' }, 'Paused'));
@@ -4534,6 +4589,7 @@
     } else ui.dockKey = null;
     box.textContent = '';
     $('#dock').classList.remove('myturn');
+    $('#dock').hidden = !ui.mode; // welcome screen: no empty bar at the bottom
     if (!T) {
       if (ui.mode) box.append(h('div', { class: 'status', style: { textAlign: 'left' } }, ui.connecting || client.mode === 'starting' ? 'Connecting…' : 'Waiting for the table…'), h('div'));
       return;
@@ -4598,6 +4654,7 @@
     const name = h('input', { class: 'input', id: 'dock-name', value: client.nick, maxlength: 16, 'aria-label': 'Your name', style: { width: '160px' }, onchange: (ev) => client.setNick(ev.target.value) });
     left.append(h('div', { class: 'handname' }, h('b', null, 'Watching'), h('span', null, sngLocked ? 'Tournament in progress' : free < 0 ? 'The table is full' : 'Tap Sit on any open seat')));
     if (sngLocked || free < 0) { right.append(name); return; }
+    if (!ui.joinDismissed) return; // the join card on the table already has the name box and Sit down
     const buy = T.c.m === 'cash' ? h('input', { class: 'input num', id: 'buyin', type: 'number', min: T.c.mn, max: T.c.mx, step: T.c.bb, value: T.c.bi, 'aria-label': 'Buy-in amount', style: { width: '120px' } }) : null;
     right.append(name, buy, h('button', { class: 'btn primary', id: 'takeseat', onclick: () => { client.setNick(name.value); takeSeat(free); } }, 'Take a seat ', h('kbd', null, 'J')));
   }

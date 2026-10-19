@@ -12,7 +12,7 @@
 <title>Back Room Poker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800&family=Bodoni+Moda:opsz,wght@6..96,700&family=Instrument+Sans:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Jost:wght@400;500;600;700&display=swap">
 <style>
 html, body { height: 100%; }
 :root { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); box-sizing: border-box; }
@@ -414,6 +414,134 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
 .joinrow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
 .joinrow .input { min-height: 46px; }
 .waitcard .input.big { font-size: 0.95rem; }
+
+
+/* =========================================================================
+   v4 · PREMIUM — "private high-roller room"
+   Near-black warm surfaces, champagne-gold hairlines used sparingly, engraved
+   Cinzel for names of things, Jost for everything you read and count.
+   ========================================================================= */
+:root {
+  --bg: oklch(0.13 0.008 60);
+  --panel: oklch(0.165 0.009 62);
+  --panel-2: oklch(0.215 0.011 65);
+  --glass: oklch(0.15 0.009 62 / 0.9);
+  --line: oklch(0.82 0.07 86 / 0.16);
+  --line-strong: oklch(0.82 0.08 86 / 0.34);
+  --ink: oklch(0.955 0.012 88);
+  --muted: oklch(0.75 0.018 82);
+  --faint: oklch(0.6 0.018 78);
+  --brass: oklch(0.85 0.085 86);
+  --brass-deep: oklch(0.7 0.09 80);
+  --brass-ink: oklch(0.19 0.03 70);
+  --fold: oklch(0.74 0.1 28);
+  --call: oklch(0.78 0.09 165);
+  --call-ink: oklch(0.97 0.01 90);
+  --allin: oklch(0.68 0.15 32);
+  --good: oklch(0.8 0.12 155);
+  --font-display: "Cinzel", "Trajan Pro", "Times New Roman", serif;
+  --font-ui: "Jost", "Futura", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --lacquer: linear-gradient(180deg, oklch(0.25 0.012 65), oklch(0.17 0.01 62));
+  --gold-fill: linear-gradient(180deg, oklch(0.9 0.07 90), oklch(0.75 0.1 80));
+  --hairline-hi: inset 0 1px 0 oklch(1 0 0 / 0.07);
+  --dur: 200ms; --ease: cubic-bezier(.2, .7, .2, 1);
+}
+body { letter-spacing: 0.005em; }
+::selection { background: oklch(0.85 0.085 86 / 0.3); }
+
+/* top bar */
+.brand { font: 700 1.05rem/1 var(--font-display); letter-spacing: 0.22em; color: var(--brass); }
+.chip { background: oklch(0.13 0.008 60 / 0.75); border-color: var(--line); font-weight: 500; letter-spacing: 0.02em; }
+.chip.live { border-color: var(--line-strong); }
+.ib { background: oklch(0.13 0.008 60 / 0.75); border-color: var(--line); border-radius: 50%; }
+.ib:hover { border-color: var(--line-strong); background: var(--panel); }
+.btn.primary.invitebtn { border-radius: 999px; }
+
+/* seats: dark lacquer plates, gold-ringed avatars */
+.plate { background: linear-gradient(180deg, oklch(0.2 0.01 62 / 0.95), oklch(0.135 0.008 60 / 0.95)); border: 1px solid var(--line); box-shadow: var(--hairline-hi), 0 12px 28px oklch(0 0 0 / 0.5); }
+.avatar { font: 600 0.92rem/1 var(--font-display); letter-spacing: 0.04em; color: oklch(0.97 0.01 90); box-shadow: 0 0 0 2px oklch(0.14 0.008 60), 0 0 0 3.5px oklch(0.82 0.08 86 / 0.75); }
+.pname { font-weight: 500; letter-spacing: 0.01em; }
+.pstack { font: 600 1.05rem/1.15 var(--font-ui); letter-spacing: 0.01em; color: var(--brass); }
+.botmark { color: var(--faint); font-weight: 400; }
+.seat.toact .plate { border-color: oklch(0.85 0.085 86 / 0.9); box-shadow: 0 0 0 1px oklch(0.85 0.085 86 / 0.6), 0 0 28px oklch(0.85 0.085 86 / 0.28), 0 12px 28px oklch(0 0 0 / 0.5); }
+.seat.win .plate { border-color: oklch(0.85 0.085 86); box-shadow: 0 0 0 1px var(--brass), 0 0 36px oklch(0.85 0.085 86 / 0.45); }
+.timer { height: 2px; background: oklch(1 0 0 / 0.06); }
+.tag { font: 600 0.68rem/1 var(--font-ui); letter-spacing: 0.1em; border-radius: 999px; padding: 4px 7px; background: oklch(0.17 0.01 62); border: 1px solid var(--line); }
+.tag.pos.d { background: oklch(0.95 0.015 88); color: oklch(0.18 0.01 60); font-family: var(--font-display); font-weight: 700; letter-spacing: 0.02em; }
+.lastact { font: 600 0.72rem/1 var(--font-ui); letter-spacing: 0.14em; background: oklch(0.13 0.008 60 / 0.88); border-color: var(--line); padding: 5px 10px; }
+.result { font: 500 0.78rem/1.25 var(--font-ui); color: oklch(0.92 0.06 88); background: linear-gradient(180deg, oklch(0.28 0.04 85 / 0.95), oklch(0.2 0.03 80 / 0.95)); border-color: oklch(0.85 0.085 86 / 0.6); }
+.eq { font: 600 0.9rem/1 var(--font-ui); }
+.betlabel { font: 600 0.86rem/1 var(--font-ui); background: oklch(0.12 0.008 60 / 0.85); border-color: var(--line); color: oklch(0.93 0.03 88); }
+
+/* pot + banners */
+#potlabel .main { font: 600 1.08rem/1 var(--font-ui); letter-spacing: 0.02em; padding: 7px 14px; background: oklch(0.12 0.008 60 / 0.82); border: 1px solid oklch(0.85 0.085 86 / 0.45); box-shadow: 0 8px 20px oklch(0 0 0 / 0.35); }
+#potlabel .side { background: oklch(0.12 0.008 60 / 0.72); border: 1px solid var(--line); }
+.banner { font: 600 1.15rem/1.15 var(--font-display); letter-spacing: 0.12em; color: oklch(0.93 0.05 88); background: linear-gradient(180deg, oklch(0.17 0.01 62 / 0.96), oklch(0.12 0.008 60 / 0.96)); border: 1px solid oklch(0.85 0.085 86 / 0.5); border-radius: 14px; padding: 12px 22px; box-shadow: var(--hairline-hi), 0 18px 40px oklch(0 0 0 / 0.5); }
+.banner small { font: 400 0.84rem/1.4 var(--font-ui); letter-spacing: 0.01em; margin-top: 6px; }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+
+/* center cards (welcome, join, invite) */
+.card { background: linear-gradient(180deg, oklch(0.18 0.01 62 / 0.94), oklch(0.13 0.008 60 / 0.94)); border-color: var(--line-strong); border-radius: 20px; padding: 28px; box-shadow: var(--hairline-hi), 0 30px 80px oklch(0 0 0 / 0.6); }
+.card h1 { font: 600 2rem/1.1 var(--font-display); letter-spacing: 0.1em; color: var(--brass); margin-bottom: 10px; }
+.card p { line-height: 1.55; }
+.card.hero h1 { font-size: 2.2rem; }
+@media (max-width: 520px) { .card h1 { font-size: 1.6rem; } .card.hero h1 { font-size: 1.75rem; } .card { padding: 22px; } }
+
+/* buttons */
+.btn { background: var(--lacquer); border-color: var(--line-strong); box-shadow: var(--hairline-hi); font-weight: 500; letter-spacing: 0.02em; border-radius: 12px; }
+.btn:hover { border-color: oklch(0.85 0.085 86 / 0.6); }
+.btn.primary { background: var(--gold-fill); color: var(--brass-ink); border-color: oklch(0.92 0.06 90); font-weight: 600; box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.35), 0 8px 22px oklch(0.75 0.1 80 / 0.22); }
+.btn.primary:hover { background: linear-gradient(180deg, oklch(0.93 0.06 92), oklch(0.79 0.1 82)); }
+.btn.ghost { background: transparent; box-shadow: none; border-color: var(--line); }
+.input, select.input { background: oklch(0.11 0.007 60); border-color: var(--line-strong); }
+.input:focus { border-color: var(--brass); box-shadow: 0 0 0 3px oklch(0.85 0.085 86 / 0.18); }
+.seg button[aria-pressed="true"] { background: var(--gold-fill); }
+
+/* the action bar: lacquered keys, gold for the aggressive action */
+#dock { background: linear-gradient(180deg, oklch(0.16 0.009 62), oklch(0.12 0.008 60)); border-top: 1px solid var(--line-strong); }
+#dock.myturn { box-shadow: 0 -1px 0 oklch(0.85 0.085 86 / 0.7), 0 -24px 50px oklch(0.85 0.085 86 / 0.08); }
+.act { background: var(--lacquer); border: 1px solid var(--line-strong); color: var(--ink); font: 600 1.06rem/1.05 var(--font-ui); letter-spacing: 0.03em; box-shadow: var(--hairline-hi), 0 8px 20px oklch(0 0 0 / 0.4); }
+.act small { font: 500 0.66rem/1 var(--font-ui); letter-spacing: 0.16em; opacity: 0.6; }
+.act.fold { color: var(--fold); background: var(--lacquer); border-color: oklch(0.74 0.1 28 / 0.4); }
+.act.call { background: linear-gradient(180deg, oklch(0.5 0.085 163), oklch(0.38 0.07 163)); border-color: oklch(0.72 0.09 163 / 0.55); color: var(--call-ink); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.14), 0 8px 20px oklch(0 0 0 / 0.4); }
+.act.raise { background: var(--gold-fill); border-color: oklch(0.92 0.06 90); color: var(--brass-ink); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.4), 0 8px 24px oklch(0.75 0.1 80 / 0.25); }
+.act.allin { background: linear-gradient(180deg, oklch(0.52 0.15 28), oklch(0.39 0.13 26)); border-color: oklch(0.66 0.14 30 / 0.7); color: oklch(0.97 0.01 90); box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.14), 0 8px 24px oklch(0.45 0.14 28 / 0.3); }
+.act.fold.armed { background: linear-gradient(180deg, oklch(0.52 0.15 28), oklch(0.39 0.13 26)); color: oklch(0.97 0.01 90); }
+.act:hover { filter: brightness(1.06); }
+.betpanel { background: linear-gradient(180deg, oklch(0.17 0.01 62 / 0.96), oklch(0.125 0.008 60 / 0.96)); border-color: var(--line-strong); box-shadow: var(--hairline-hi), 0 24px 60px oklch(0 0 0 / 0.6); }
+.betpanel .presets button { background: oklch(0.13 0.008 60); border-color: var(--line); font: 600 0.84rem/1.1 var(--font-ui); letter-spacing: 0.03em; }
+.betpanel .presets button[aria-pressed="true"] { border-color: var(--brass); background: oklch(0.85 0.085 86 / 0.12); color: var(--brass); }
+.stepbtn { background: var(--lacquer); border-color: var(--line-strong); box-shadow: var(--hairline-hi); }
+.slide input[type=range] { accent-color: oklch(0.85 0.085 86); }
+.docktimer { height: 2px; }
+.docktimer i, .timer i { background: linear-gradient(90deg, oklch(0.75 0.1 80), oklch(0.9 0.07 90)); }
+.handname b { font: 600 1rem/1.15 var(--font-display); letter-spacing: 0.1em; color: oklch(0.93 0.04 88); }
+.pre label { border-color: var(--line); font-weight: 500; letter-spacing: 0.02em; }
+.pre label:has(input:checked) { border-color: var(--brass); background: oklch(0.85 0.085 86 / 0.08); }
+.mc { font-family: var(--font-ui); font-weight: 600; }
+
+/* drawer, sheets, toasts, ticker */
+#drawer, #sheet { background: linear-gradient(180deg, oklch(0.17 0.01 62 / 0.97), oklch(0.13 0.008 60 / 0.97)); border-color: var(--line-strong); }
+.sheethead h2, #sheet h2 { font-family: var(--font-display); letter-spacing: 0.12em; font-weight: 600; }
+.toast { background: oklch(0.15 0.009 62 / 0.95); border-color: var(--line-strong); }
+#ticker { background: oklch(0.11 0.007 60 / 0.7); border-color: var(--line); font-family: var(--font-ui); }
+.vig { background: radial-gradient(ellipse 70% 62% at 50% 46%, transparent 52%, oklch(0.06 0.005 60 / 0.7)); }
+
+.banner .why { pointer-events: auto; display: inline-block; margin-top: 8px; padding: 0; border: 0; background: none; color: var(--brass); font: 500 0.8rem/1.2 var(--font-ui); letter-spacing: 0.04em; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: oklch(0.85 0.085 86 / 0.45); cursor: pointer; }
+.banner .why:hover { text-decoration-color: var(--brass); }
+@media (max-width: 520px) {
+  .banner { font-size: 0.92rem; letter-spacing: 0.1em; padding: 8px 14px; max-width: 74vw; }
+  .banner small { font-size: 0.76rem; margin-top: 4px; }
+  .banner .why { margin-top: 4px; font-size: 0.74rem; }
+  .handname b { font-size: 0.84rem; letter-spacing: 0.06em; white-space: normal; line-height: 1.2; }
+}
+
+@media (max-width: 520px) {
+  .brand { font-size: 0.86rem; letter-spacing: 0.14em; }
+  .tableinfo { flex-wrap: nowrap; overflow: hidden; }
+  .tableinfo .chip { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+}
+@media (max-width: 380px) { .brand { display: none; } }
 
 </style>
 </head>
