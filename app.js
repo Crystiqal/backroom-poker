@@ -2871,8 +2871,28 @@
       x.fill(); x.restore();
     }
 
-    // Big-index faces: a huge rank and suit in the corner plus one large suit, so a card reads at a glance
-    // even small, far away or at an angle (the style online poker rooms use).
+    // Casino "jumbo index" cards: a large rank and suit in two opposite corners (readable from across the
+    // table and when cards overlap), real pip layouts in the middle, and double-headed J / Q / K with crowns.
+    crown(x, kind, cx, cy, s, fill, edge) {
+      x.save(); x.translate(cx, cy); x.scale(s / 100, s / 100);
+      x.fillStyle = fill; x.strokeStyle = edge; x.lineWidth = 3; x.lineJoin = 'round';
+      x.beginPath();
+      if (kind === 'K') { // royal crown: five points with jewels
+        x.moveTo(-50, 22); x.lineTo(-50, -14); x.lineTo(-32, 4); x.lineTo(-18, -30); x.lineTo(0, 0); x.lineTo(18, -30); x.lineTo(32, 4); x.lineTo(50, -14); x.lineTo(50, 22); x.closePath();
+      } else if (kind === 'Q') { // tiara: arched peaks
+        x.moveTo(-46, 22); x.lineTo(-46, 4); x.quadraticCurveTo(-34, -18, -22, 2); x.quadraticCurveTo(-11, -34, 0, -6); x.quadraticCurveTo(11, -34, 22, 2); x.quadraticCurveTo(34, -18, 46, 4); x.lineTo(46, 22); x.closePath();
+      } else { // jack: coronet with three short points
+        x.moveTo(-40, 22); x.lineTo(-40, 0); x.lineTo(-26, -14); x.lineTo(-13, 0); x.lineTo(0, -18); x.lineTo(13, 0); x.lineTo(26, -14); x.lineTo(40, 0); x.lineTo(40, 22); x.closePath();
+      }
+      x.fill(); x.stroke();
+      x.fillStyle = edge; x.fillRect(kind === 'J' ? -40 : -50, 12, kind === 'J' ? 80 : 100, 4);
+      const tips = kind === 'K' ? [[-50, -18], [-18, -34], [18, -34], [50, -18]] : kind === 'Q' ? [[-22, -2], [22, -2]] : [[-26, -18], [26, -18]];
+      const top = kind === 'K' ? [0, -6] : kind === 'Q' ? [0, -12] : [0, -22];
+      x.fillStyle = '#b3262e';
+      for (const [px, py] of tips) { x.beginPath(); x.arc(px, py, 5.5, 0, Math.PI * 2); x.fill(); }
+      x.fillStyle = '#1f4fb8'; x.beginPath(); x.arc(top[0], top[1], kind === 'Q' ? 9 : 7, 0, Math.PI * 2); x.fill();
+      x.restore();
+    }
     faceTex(card) {
       const THREE = T3();
       const key = 'face' + card + (this.opts.fourColor ? 4 : 2) + (this.opts.bigCards ? 'b' : '') + (this.fontsReady ? 'f' : '');
@@ -2880,27 +2900,66 @@
       const W = 512, H = 732;
       const c = document.createElement('canvas'); c.width = W; c.height = H;
       const x = c.getContext('2d');
-      // ivory card stock with a fine gold inner line
-      const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#fffdf8'); g.addColorStop(1, '#f1ece1');
+      const g = x.createLinearGradient(0, 0, W, H); g.addColorStop(0, '#fffefa'); g.addColorStop(1, '#f3eee3');
       x.fillStyle = g; x.fillRect(0, 0, W, H);
-      x.strokeStyle = 'rgba(176,141,72,0.55)'; x.lineWidth = 4; x.strokeRect(20, 20, W - 40, H - 40);
       const r = card[0], suit = card[1];
       const rank = r === 'T' ? '10' : r;
       const col = (this.opts.fourColor ? SUIT_COLOR4 : SUIT_COLOR2)[suit];
       const big = this.opts.bigCards;
-      const fs = big ? 350 : 310;
-      // one large suit, partly off the corner (clean modern look, still recognisable from across the table)
-      x.save(); x.beginPath(); x.rect(20, 20, W - 40, H - 40); x.clip();
-      x.fillStyle = col; x.globalAlpha = 0.96; this.suitPath(x, suit, W * 0.69, H * 0.75, big ? 380 : 350, false);
-      x.restore();
-      // big rank, squeezed to fit when wide (10, Q, K...)
-      x.fillStyle = col; x.textAlign = 'left'; x.textBaseline = 'alphabetic';
-      x.font = `600 ${fs}px "Jost", "Futura", "Avenir Next", "Helvetica Neue", Arial, sans-serif`;
-      const maxW = W * 0.6, mw = x.measureText(rank).width;
-      const sx = Math.min(1, maxW / mw) * (rank === '10' ? 0.9 : 1);
-      x.save(); x.translate(44, fs * 0.82 + 34); x.scale(sx, 1); x.fillText(rank, 0, 0); x.restore();
-      // small suit under the rank
-      this.suitPath(x, suit, 44 + 66, fs * 0.82 + 128, big ? 132 : 118, false);
+      const serif = '"Cinzel", "Times New Roman", serif';
+      // corner indices (top-left and, rotated, bottom-right)
+      const index = (flip) => {
+        x.save(); if (flip) { x.translate(W, H); x.rotate(Math.PI); }
+        x.fillStyle = col; x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+        const fs = big ? 176 : 150;
+        x.font = `700 ${fs}px ${serif}`;
+        const cx = big ? 78 : 70;
+        x.save(); x.translate(cx, fs * 0.84 + 26); if (rank === '10') x.scale(0.7, 1); x.fillText(rank, 0, 0); x.restore();
+        this.suitPath(x, suit, cx, fs * 0.84 + 98, big ? 96 : 84, false);
+        x.restore();
+      };
+      index(false); index(true);
+      const L = 0.36, R = 0.64, T = 0.2, B = 0.8;
+      const P = {
+        2: [[.5, T], [.5, B]], 3: [[.5, T], [.5, .5], [.5, B]], 4: [[L, T], [R, T], [L, B], [R, B]],
+        5: [[L, T], [R, T], [.5, .5], [L, B], [R, B]], 6: [[L, T], [R, T], [L, .5], [R, .5], [L, B], [R, B]],
+        7: [[L, T], [R, T], [.5, .35], [L, .5], [R, .5], [L, B], [R, B]], 8: [[L, T], [R, T], [.5, .35], [L, .5], [R, .5], [.5, .65], [L, B], [R, B]],
+        9: [[L, T], [R, T], [L, .4], [R, .4], [.5, .5], [L, .6], [R, .6], [L, B], [R, B]],
+        10: [[L, T], [R, T], [.5, .3], [L, .4], [R, .4], [L, .6], [R, .6], [.5, .7], [L, B], [R, B]],
+      };
+      x.fillStyle = col;
+      if (r === 'A') {
+        // ace: one large pip inside a fine gold ring
+        x.strokeStyle = 'rgba(176,141,72,0.55)'; x.lineWidth = 3;
+        x.beginPath(); x.arc(W / 2, H / 2, 150, 0, Math.PI * 2); x.stroke();
+        x.lineWidth = 1.2; x.beginPath(); x.arc(W / 2, H / 2, 138, 0, Math.PI * 2); x.stroke();
+        x.fillStyle = col; this.suitPath(x, suit, W / 2, H / 2 + 6, suit === 's' ? 210 : 180, false);
+      } else if ('JQK'.includes(r)) {
+        // double-headed court: framed panel, crown and letter, mirrored through the centre
+        const fx = 118, fy = 92, fw = W - 236, fh = H - 184;
+        const warm = suit === 'h' || suit === 'd';
+        const pg = x.createLinearGradient(0, fy, 0, fy + fh);
+        pg.addColorStop(0, warm ? '#fbf0e6' : '#eef1f6'); pg.addColorStop(0.5, warm ? '#f6e4d4' : '#e2e7ef'); pg.addColorStop(1, warm ? '#fbf0e6' : '#eef1f6');
+        x.fillStyle = pg; x.fillRect(fx, fy, fw, fh);
+        x.strokeStyle = '#b08d48'; x.lineWidth = 5; x.strokeRect(fx, fy, fw, fh);
+        x.strokeStyle = col; x.lineWidth = 1.5; x.strokeRect(fx + 9, fy + 9, fw - 18, fh - 18);
+        x.strokeStyle = 'rgba(176,141,72,0.6)'; x.lineWidth = 2; x.beginPath(); x.moveTo(fx + 9, fy + fh / 2 + 30); x.lineTo(fx + fw - 9, fy + fh / 2 - 30); x.stroke();
+        const half = () => {
+          this.crown(x, r, W / 2, fy + 78, 112, '#d9b45e', '#6b5023');
+          x.fillStyle = col; x.textAlign = 'center'; x.textBaseline = 'alphabetic';
+          x.font = `700 150px ${serif}`;
+          x.fillText(r, W / 2, fy + 232);
+          x.fillStyle = col;
+          this.suitPath(x, suit, fx + 34, fy + 40, 38, false);
+          this.suitPath(x, suit, fx + fw - 34, fy + 40, 38, false);
+        };
+        half();
+        x.save(); x.translate(W, H); x.rotate(Math.PI); half(); x.restore();
+      } else {
+        const n = +(r === 'T' ? 10 : r);
+        const sz = n <= 3 ? 104 : n <= 6 ? 96 : n <= 8 ? 88 : 80;
+        for (const [px, py] of P[n]) this.suitPath(x, suit, W * px, H * py, sz, py > 0.5);
+      }
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
       this.texCache.set(key, t);
       return t;
@@ -2920,6 +2979,7 @@
           c.grp.add(g); c.glow = g;
         }
         if (c.glow) c.glow.visible = state === 1;
+        c.lift = state === 1 ? 0.07 : 0;
       }
       this.needs = true;
     }
@@ -3183,7 +3243,7 @@
       const t = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
       return p.add(t.multiplyScalar(i === this.me ? 1.05 : 0.62));
     }
-    betSpot(i) { return this.onEllipse(i, 0.52); }
+    betSpot(i) { return this.onEllipse(i, i === this.me && !this.portrait ? 0.44 : 0.52); }
     btnSpot(i) {
       const THREE = T3();
       const p = this.onEllipse(i, 0.62), a = this.seatAngle(i);
@@ -3288,6 +3348,22 @@
         }
         this.anims = keep;
       }
+      // floating: your own cards (and the winning cards at showdown) hover gently
+      if (!this.opts.reduced && now - (this.floatAt || 0) > 33) {
+        let any = false;
+        const tq = this._fq || (this._fq = new (T3().Quaternion)()), ax = this._fax || (this._fax = new (T3().Vector3)(0, 0, 1));
+        for (const c of this.cards.values()) {
+          const mineUp = c.kind === 'hole' && c.seat === this.me && c.mine && c.up && !c.folded;
+          const fl = mineUp || c.lift > 0;
+          if (!fl || c.moving || !c.rest) continue;
+          any = true;
+          const ph = now / 1000 * 1.7 + (c.k || 0) * 1.1 + (c.bi || 0) * 0.7;
+          c.grp.position.set(c.rest.pos.x, c.rest.pos.y + (c.lift || 0) + (mineUp ? 0.022 : 0.012) * (1 + Math.sin(ph)), c.rest.pos.z);
+          tq.setFromAxisAngle(ax, (mineUp ? 0.018 : 0.006) * Math.sin(ph * 0.8 + 0.6));
+          c.grp.quaternion.copy(c.rest.q).multiply(tq);
+        }
+        if (any) { this.floatAt = now; active = true; }
+      }
       // pulsing turn ring
       if (this.turnRing.visible && this.turnOn && this.turnRing.material.opacity < 0.5) {
         this.turnRing.material.opacity = Math.min(0.5, this.turnRing.material.opacity + 0.05);
@@ -3357,11 +3433,13 @@
     // ---------- card placement ----------
     myCardSpot(i, n) {
       const THREE = T3();
-      const base = this.onEllipse(this.me, 0.79);
+      // a little in from the rail and lifted so the whole card stays above the felt (nothing hidden by the rail)
+      const base = this.onEllipse(this.me, this.portrait ? 0.74 : 0.71);
       const a = this.seatAngle(this.me);
       const t = new THREE.Vector3(-Math.sin(a), 0, Math.cos(a));
       const spread = n > 3 ? 0.38 : 0.58;
-      return base.add(t.multiplyScalar((i - (n - 1) / 2) * spread)).add(new THREE.Vector3(0, 0.12 + i * 0.004, 0));
+      const sc = n > 3 ? 1.15 : 1.42;
+      return base.add(t.multiplyScalar((i - (n - 1) / 2) * spread)).add(new THREE.Vector3(0, (CH * sc / 2) * Math.sin(0.62) + 0.05 + i * 0.004, 0));
     }
 
     cardTarget(c) {
@@ -3392,7 +3470,7 @@
           // shown cards: side by side, upright as you look at the table, leaning back so you can read them
           const ssc = c.n > 3 ? 0.9 : 1.05, gap = CW * ssc + 0.03;
           pos.copy(this.onEllipse(c.seat, 0.8)); if (!this.portrait) pos.x *= 0.9; pos.x += (c.k - (c.n - 1) / 2) * gap;
-          if (!this.portrait && pos.z < -1.2) pos.z += 0.5; // top seats: keep shown cards clear of the name plate
+          if (!this.portrait && pos.z < -1.2) pos.z += 0.36; // top seats: keep shown cards clear of the name plate
           pos.y = (CH * ssc / 2) * Math.sin(TILT) + 0.02 + c.k * 0.002;
           rot.order = 'YXZ'; rot.y = 0; rot.x = -Math.PI / 2 + TILT; rot.z = 0;
           return { pos, rot, sc: ssc };
@@ -3408,26 +3486,31 @@
       return { pos, rot, sc };
     }
 
-    moveCard(c, delay, dur, arc, then) {
+    moveCard(c, delay, dur, arc, then, spin) {
       const THREE = T3();
       const tg = this.cardTarget(c);
       const g = c.grp;
       const p0 = g.position.clone(), q0 = g.quaternion.clone(), s0 = g.scale.x;
       const q1 = new THREE.Quaternion().setFromEuler(tg.rot);
+      c.rest = { pos: tg.pos.clone(), q: q1.clone(), sc: tg.sc };
+      c.moving = (c.moving || 0) + 1;
+      const fin = () => { c.moving = Math.max(0, c.moving - 1); if (then) then(); };
       if (dur <= 0 || this.opts.reduced) {
         if (delay > 0 && !this.opts.reduced) {
-          this.anim(1, delay, () => { g.position.copy(tg.pos); g.quaternion.copy(q1); g.scale.setScalar(tg.sc); }, then);
-        } else { g.position.copy(tg.pos); g.quaternion.copy(q1); g.scale.setScalar(tg.sc); if (then) then(); }
+          this.anim(1, delay, () => { g.position.copy(tg.pos); g.quaternion.copy(q1); g.scale.setScalar(tg.sc); }, fin);
+        } else { g.position.copy(tg.pos); g.quaternion.copy(q1); g.scale.setScalar(tg.sc); fin(); }
         this.needs = true;
         return;
       }
+      const yAxis = new THREE.Vector3(0, 1, 0), qs = new THREE.Quaternion();
       this.anim(dur, delay, (t) => {
         const e = ease.out(t);
         g.position.lerpVectors(p0, tg.pos, e);
         g.position.y += Math.sin(Math.PI * e) * (arc || 0);
         g.quaternion.slerpQuaternions(q0, q1, e);
+        if (spin) { qs.setFromAxisAngle(yAxis, spin * (1 - e)); g.quaternion.premultiply(qs); }
         g.scale.setScalar(s0 + (tg.sc - s0) * e);
-      }, then);
+      }, fin);
     }
 
     removeCard(key, c, delay) {
@@ -3525,7 +3608,7 @@
             if (freshDeal && !this.opts.reduced) {
               const oi = Math.max(0, order.indexOf(s));
               const delay = (k * Math.max(order.length, 1) + oi) * 120 + 200;
-              this.moveCard(c, delay, 420, 0.25);
+              this.moveCard(c, delay, 520, 0.55, null, (Math.random() < 0.5 ? -1 : 1) * Math.PI * 0.9);
               PK.sfx && PK.sfx.deal(delay);
               dealing = Math.max(dealing, delay);
             } else this.moveCard(c, 0, 0);
@@ -3565,7 +3648,7 @@
           const d0 = bd; bd += k < 3 && boards[bi].length >= 3 && !this.boardSeen(bi, vm.hn) ? 160 : 220;
           // land face down, then flip
           c.up = false;
-          this.moveCard(c, d0, 400, 0.2, () => { c.up = true; this.moveCard(c, 80, 360, 0.18); });
+          this.moveCard(c, d0, 460, 0.35, () => { c.up = true; this.moveCard(c, 80, 420, 0.32); }, Math.PI * 0.6);
           PK.sfx && PK.sfx.deal(d0);
         } else if (c.nb !== nb || !c.placed) { c.nb = nb; c.placed = true; c.up = true; this.moveCard(c, 0, 250, 0.05); }
       }

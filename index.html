@@ -543,6 +543,14 @@ body { letter-spacing: 0.005em; }
 }
 @media (max-width: 380px) { .brand { display: none; } }
 
+/* v5 · classic casino cards in the dock: corner index in Cinzel, whole pips (nothing cropped) */
+.mc { font: 700 calc(var(--w) * 0.46)/1 "Cinzel", "Times New Roman", serif; letter-spacing: 0; background: linear-gradient(160deg, #fffefa, #f2ede2); box-shadow: 0 4px 12px oklch(0 0 0 / 0.45), inset 0 0 0 1px oklch(0.3 0.02 60 / 0.15); }
+.mc .r { left: calc(var(--w) * 0.08); top: calc(var(--w) * 0.08); }
+.mc .r.ten { letter-spacing: -0.06em; transform: scaleX(0.74); transform-origin: left top; }
+.mc .s1 { left: calc(var(--w) * 0.1); top: calc(var(--w) * 0.56); width: calc(var(--w) * 0.26); height: calc(var(--w) * 0.26); }
+.mc .s2 { right: calc(var(--w) * 0.1); bottom: calc(var(--w) * 0.12); width: calc(var(--w) * 0.5); height: calc(var(--w) * 0.5); }
+.cardrow .mc .s2 { right: calc(var(--w) * 0.08); bottom: calc(var(--w) * 0.08); width: calc(var(--w) * 0.46); height: calc(var(--w) * 0.46); }
+
 </style>
 </head>
 <body>
